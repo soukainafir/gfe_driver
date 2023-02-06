@@ -54,6 +54,11 @@
 #include "teseo/teseo_real_vtx.hpp"
 #endif
 
+#if defined(HAVE_SST)
+#include "teseo/teseo_driver.hpp"
+#include "teseo/teseo_real_vtx.hpp"
+#endif
+
 using namespace std;
 
 /*****************************************************************************

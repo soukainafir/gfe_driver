@@ -98,6 +98,12 @@ endif
 ifneq (,$(findstring -DHAVE_LIVEGRAPH,${ALL_CPPFLAGS}))
 	sources += $(addprefix library/livegraph/, livegraph_driver.cpp)
 endif
+ifneq (,$(findstring -DHAVE_SST,${ALL_CPPFLAGS}))
+	sources += $(addprefix library/sst/, sst.cpp pagerank.cpp)
+	#sources += $(addprefix /home/soukaina/SSTGraph/, utility.cpp csrpp.cpp csrpp_utility.cpp)
+	#LDFLAGS := @LDFLAGS@ /scratch_user/sfirmli/csr_pp1/csr_pp/external/libs/liblockin.a
+	CXXFLAGS := @CXXFLAGS@
+endif
 
 
 #############################################################################

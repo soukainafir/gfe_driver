@@ -54,7 +54,7 @@ class GraphOne : public virtual UpdateInterface, public virtual GraphalyticsInte
     uint64_t m_num_edge_locks { 0 }; // the size of the array m_edge_locks;
     PaddedLock* m_edge_locks { nullptr }; // battery of lock, used for the edge updates, when blink_writes is disabled
 
-    // Insert/remove an edge into GraphOne. The weight is ignored if the operation is a deletion
+    // Insert/remove a\n edge into GraphOne. The weight is ignored if the operation is a deletion
     void do_update(bool is_insert, uint64_t logical_source_id, uint64_t logical_destination_id, double weight = 0.0);
 
     /**

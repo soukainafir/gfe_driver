@@ -83,6 +83,7 @@ AC_DEFUN([AX_LIB_SQLITE3],
         AC_MSG_CHECKING([for SQLite3 library >= $sqlite3_version_req])
 
         if test "$ac_sqlite3_path" != ""; then
+            AC_MSG_CHECKING([for SQLite3 library >= $sqlite3_version_req])
             ac_sqlite3_ldflags="-L$ac_sqlite3_path/lib"
             ac_sqlite3_cppflags="-I$ac_sqlite3_path/include"
         else

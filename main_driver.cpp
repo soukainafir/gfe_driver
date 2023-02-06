@@ -34,6 +34,8 @@
 #include "omp.h"
 #endif
 
+extern "C" { void invoke_me(); }
+
 using namespace common;
 using namespace gfe;
 using namespace gfe::experiment;

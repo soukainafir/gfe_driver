@@ -454,6 +454,91 @@ if( test x"${with_llama}" != x"no" ); then
     AS_VAR_APPEND([CPPFLAGS], [" -DLLAMA_FAIR_SHARED_MUTEX"])
 fi
 
+
+#############################################################################
+# Support for the SSTGraph framework
+# Usage:
+# default (auto) => it attempts to support sst, but it does not abort in case it cannot
+# --without-sst => disable support for sst
+# --with-sst => attempt to support sst and aborts in case of error
+# --with-sst=/path/to/sst_repo => add the given path into the list of include paths for the $CC, it fails in case it cannot enable sst
+#
+AC_ARG_WITH([sst], [AS_HELP_STRING([--with-sst@<:@=ARG@:>@], [
+    Add support for the SSTGraph library. The argument needs to be the path where the sst library is located. @<:@Default: auto@:>@
+    ])], [])
+m4_divert_push([DEFAULTS])
+    AS_VAR_SET([with_sst], ["auto"])
+m4_divert_pop([DEFAULTS])
+
+
+if ( test -z "${with_sst}" ); then with_sst="no"; dnl transform the empty string '' into 'no'
+elif ( test x"${with_sst}" != x"yes" && test x"${with_sst}" != x"auto" ); then dnl --with-sst=/path/to/sst_repo/sst/include
+    with_sst=${with_sst%/} # remove the trailing slash if present
+    sst_includedir="";
+
+    AC_CHECK_FILE([${with_sst}/SparseMatrix.hpp], [sst_includedir="${with_sst}"])
+
+    if( test x"${sst_includedir}" == x"" ); then
+        AC_MSG_FAILURE([Cannot find the header sst.h inside ${with_sst}])
+    fi
+
+    AS_VAR_APPEND([CPPFLAGS], [" -I${sst_includedir}"])
+fi
+
+dnl check whether we can compile & link a program that makes usage of omp.h
+if ( test "${have_openmp}" == "no" ); then
+    if ( test x"${with_sst}" == x"auto" ); then
+        AC_MSG_NOTICE([sst support disabled: the OpenMP header omp.h is missing.])
+        with_sst="no";
+    else
+        AC_MSG_FAILURE([sst: missing prerequisite header omp.h (OpenMP runtime library)])
+    fi
+fi
+
+dnl check whether we have Intel TBB
+if ( test x"${with_sst}" != x"no" &&  test x"${with_sst}" != x"auto" ); then
+	AC_MSG_NOTICE([sst: checking whether Intel TBB is present in the machine...])
+	MY_INTEL_TBB() dnl it raises an error if not satisfied
+	AS_VAR_APPEND([CPPFLAGS], [" -DSST_HASHMAP_WITH_TBB"])
+fi
+
+dnl check whether we can compile & link a simple program invoking functions from the sst library
+if ( test x"${with_sst}" != x"no" ); then
+    AC_MSG_CHECKING([whether we can compile and link against the sst library])
+    AC_LINK_IFELSE([
+        AC_LANG_PROGRAM([[
+            @%:@include "SparseMatrix.hpp"
+
+            VertexSubset Frontier = VertexSubset(0, 1, true);
+        ]], [[
+            VertexSubset Frontier2 = VertexSubset(0, 2, true);
+        ]])
+    ], [
+        AC_MSG_RESULT([yes])
+    ], [
+        AC_MSG_RESULT([no])
+        if ( test x"${with_sst}" = x"auto" ); then
+            AC_MSG_NOTICE([sst support disabled])
+            with_sst="no";
+        else
+            AC_MSG_FAILURE([unable to compile and link an executable with sst])
+        fi
+    ])
+fi
+
+dnl check whether we have Intel TBB (auto)
+if (test x"${with_sst}" == x"auto" ); then
+    AC_MSG_NOTICE([sst: checking whether Intel TBB is present in the machine...])
+    MY_INTEL_TBB() dnl it raises an error if not satisfied
+    AS_VAR_APPEND([CPPFLAGS], [" -DSST_HASHMAP_WITH_TBB"])
+fi
+
+dnl add the definition HAVE_LLAMA into the list of preprocessor variables $CPPFLAGS
+if( test x"${with_sst}" != x"no" ); then
+    AC_MSG_NOTICE([sst support enabled])
+    AS_VAR_APPEND([CPPFLAGS], [" -DHAVE_SST"])
+    AS_VAR_APPEND([CPPFLAGS], [" -DSST_FAIR_SHARED_MUTEX"])
+fi
 #############################################################################
 # Support for the GraphOne framework
 # Usage:
