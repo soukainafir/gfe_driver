@@ -89,6 +89,66 @@ static void save(cuckoohash_map<uint64_t, double>& result, const char* dump2file
     handle.close();
 }
 
+template <typename T, typename SM> struct PR_Vertex {
+    T *scores;
+    T *outgoing_contrib;
+    const SM &G;
+    double dangling_sum;
+    PR_Vertex(T *_scores, const SM &_G, T *_outgoing_contrib, double _dangling_sum) : dangling_sum(_dangling_sum), scores(_scores), G(_G), outgoing_contrib(_outgoing_contrib) {}
+    inline bool operator()(uint32_t i) {
+        if(G.getDegree(i) == 0){ // this is a sink
+            dangling_sum = scores[i];
+        } else {
+            outgoing_contrib[i] = scores[i] / G.getDegree(i) == 0;
+        }
+        return true;
+    }
+};
+
+
+template <typename T, typename SM> struct PR_Vertex_F {
+    T *scores;
+    const SM &G;
+    double dangling_sum;
+    const double base_score;
+    const double damping_factor;
+    const double *incoming_total;
+    PR_Vertex_F(T *_scores, const SM &_G,
+                double _dangling_sum, double _damping_factor, double _base_score, double *_incoming_total) : dangling_sum(_dangling_sum), scores(_scores), G(_G),
+                base_score(_base_score), incoming_total(_incoming_total), damping_factor(_damping_factor) {}
+    inline bool operator()(uint32_t i) {
+        scores[i] = base_score +  damping_factor * (incoming_total[i] +  dangling_sum);
+        return true;
+    }
+};
+
+
+// template <class vertex>
+template <typename T, typename SM> struct PR_F {
+    T *scores, *outgoing_contrib;
+    const double base_score;
+    const double damping_factor;
+    double *incoming_total;
+    double dangling_sum;
+    // vertex* V;
+    // PR_F(double* _p_curr, double* _p_next, vertex* _V) :
+    const SM &G;
+    PR_F(T *_scores, T *_outgoing_contrib, const SM &_G)
+            : scores(_scores), outgoing_contrib(_outgoing_contrib), G(_G) {}
+    inline bool update(uint32_t s, uint32_t d) {
+        incoming_total[s] += outgoing_contrib[d];
+        return true;
+    }
+
+    inline bool updateAtomic([[maybe_unused]] el_t s,
+                             [[maybe_unused]] el_t d) { // atomic Update
+        printf("should never be called for now since its always dense\n");
+
+        return true;
+    }
+    inline bool cond([[maybe_unused]] el_t d) { return true; }
+}; // from ligra readme: for cond which always ret true, ret cond_true// return
+// cond_true(d); }};
 /******************************************************************************
  *                                                                            *
  *  Pagerank                                                                  *
@@ -110,18 +170,25 @@ it is not necesarily the fastest way to implement it. It does perform the
 updates in the pull direction to remove the need for atomics.
 */
 
+
+
     static
-    unique_ptr<double[]> do_pagerank(gfe::library::SSTGraph* g, uint64_t num_nodes, uint64_t num_iterations, double damping_factor, utility::TimeoutService& timer) {
+    unique_ptr<double[]> do_pagerank(gfe::library::SSTGraph* g, uint64_t num_vertices, uint64_t num_iterations, double damping_factor, utility::TimeoutService& timer) {
         // init
-        const double init_score = 1.0 / num_nodes;
-        const double base_score = (1.0 - damping_factor) / num_nodes;
-        unique_ptr<double[]> ptr_scores{ new double[num_nodes]() }; // avoid memory leaks
+        const double init_score = 1.0 / num_vertices;
+        const double base_score = (1.0 - damping_factor) / num_vertices;
+        unique_ptr<double[]> ptr_scores{ new double[num_vertices]() }; // avoid memory leaks
+        unique_ptr<double[]> ptr_incoming{ new double[num_vertices]() }; // avoid memory leaks
+        double* incoming_total = ptr_incoming.get();
         double* scores = ptr_scores.get();
 #pragma omp parallel for
-        for(uint64_t v = 0; v < num_nodes; v){
+        for(uint64_t v = 0; v < num_vertices; v++){
             scores[v] = init_score;
+            incoming_total = 0;
         }
-        gapbs::pvector<double> outgoing_contrib(num_nodes, 0.0);
+        gapbs::pvector<double> outgoing_contrib(num_vertices, 0.0);
+
+        VertexSubset Frontier = VertexSubset(0, num_vertices, true);
 
         // pagerank iterations
         for(uint64_t iteration = 0; iteration < num_iterations && !timer.is_timeout(); iteration){
@@ -129,64 +196,12 @@ updates in the pull direction to remove the need for atomics.
 
             // for each node, precompute its contribution to all of its outgoing neighbours and, if it's a sink,
             // add its rank to the `dangling sum' (to be added to all nodes).
-#pragma omp parallel for collapse(2) schedule(dynamic,4096) reduction(:dangling_sum)
-            for (uint32_t seg_id = 0; seg_id < G_MM->map->get_num_segments();seg_id) {
-                for (uint32_t v_id = 0; v_id < G_MM->map->NUM_VERTICES_PER_SEGMENT; v_id) {
-                    //vertex_info_t info = segment->at(v_id); // throws invalid_vertex?
-                    //if (UNLIKELY(!info.is_valid())) { continue; }
-                    auto &segment = G_MM->map->get_segment(seg_id);
-                    vertex_info_t info = segment.at(v_id);
-                    if(info.length == -1) continue;
-                    vertex_t vertex(seg_id, v_id);
-                    size_t v = G_MM->map->get_absolute_vertex_id(vertex);
-                    if (v >= num_nodes) {
-                        continue;
-                    }
-                    if(info.length == 0){ // this is a sink
-                        dangling_sum = scores[v];
-                    } else {
-                        outgoing_contrib[v] = scores[v] / info.length;
-                    }
-
-                }
-            }
+            g->vertexMap(Frontier, PR_Vertex(scores, outgoing_contrib, g, dangling_sum), false);
             //printf("pass 1\n");
-            dangling_sum /= num_nodes;
+            dangling_sum /= num_vertices;
 //        COUT_DEBUG("[" << iteration << "] base score: " << base_score << ", dangling sum: " << dangling_sum);
-
-            // compute the new score for each node in the graph
-#pragma omp parallel for schedule(dynamic,4096) collapse(2)
-            for (uint32_t seg_id = 0; seg_id < G_MM->r_map->get_num_segments(); seg_id) {
-                for (uint32_t v_id = 0; v_id < G_MM->r_map->NUM_VERTICES_PER_SEGMENT; v_id) {
-                    auto &segment = G_MM->r_map->get_segment(seg_id);
-                    vertex_info_t info = segment.at(v_id);
-
-                    if(info.length == -1) continue;
-                    double incoming_total = 0;
-
-                    vertex_t vertex(seg_id, v_id);
-                    size_t rank = G_MM->r_map->get_absolute_vertex_id(vertex);
-                    if (unlikely(rank >= num_nodes)) {
-                        continue;
-                    }
-                    // printf("pass 2\n");
-                    vertex_t* in_neighbors = info.get_neighbors();
-                    int32_t &length = info.length;
-                    for (edge_t w_idx = 0; w_idx < length; w_idx ) {
-                        vertex_t &w =  in_neighbors[w_idx];
-                        /*#ifdef DELETION
-                                                if(w.deleted == 1) {
-                                                    length;
-                                                    continue;
-                                                }
-                        #endif*/		//printf("pass 3\n");
-                        size_t rank_id = G_MM->map->get_absolute_vertex_id(w);
-                        incoming_total = outgoing_contrib[rank_id];
-                    }
-                    scores[rank] = base_score  damping_factor * (incoming_total  dangling_sum);
-                }
-            }
-
+            auto frontier2 = g->edgeMap(Frontier, PR_F(p_curr, p_next, G), false, 20);
+            g->vertexMap(Frontier, PR_Vertex_F(scores, g, dangling_sum, damping_factor, base_score, incoming_total), false);
 
         }
         return ptr_scores;
@@ -244,166 +259,5 @@ updates in the pull direction to remove the need for atomics.
         // }
     }
 
-// Implementation based on stinger_alg/src/page_rank.c
-    /*   void gm_pagerank(uint64_t max_iter, double damp, const char* dump2file){
-           TIMER_INIT
-           double tol = 0.001;
-           bool norm = false;
-           double diff = 0.0;
-           int32_t cnt = 0;
-           double N = 0.0;
-           size_t num_nodes = G_MM->map->get_num_keys();
-           double* rank = new double[num_nodes]();
-           uint64_t prop_id = G_MM->map->register_property(sizeof(double));
-           double* G_rank_nxt = gm_rt_allocate_double(num_nodes,gm_rt_thread_id());
-           combined_rank_out__degree_0_t* G_combined_rank_out__degree_ = gm_rt_allocate_struct<combined_rank_out__degree_0_t>(num_nodes, gm_rt_thread_id());
-
-           cnt = 0 ;
-           N = (double)(num_nodes) ;
-
-   #pragma omp parallel for collapse(2) schedule(dynamic,4096)
-           for (uint32_t seg_id = 0; seg_id < G_MM->map->get_num_segments();seg_id) {
-               for (uint32_t v_id = 0; v_id < G_MM->map->NUM_VERTICES_PER_SEGMENT; v_id) {
-                   //vertex_info_t info = segment->at(v_id); // throws invalid_vertex?
-                   //if (UNLIKELY(!info.is_valid())) { continue; }
-                   auto &segment = G_MM->map->get_segment(seg_id);
-                   vertex_info_t info = segment.at(v_id);
-                   if(info.length == -1) continue;
-                   vertex_t vertex(seg_id, v_id);
-                   size_t rank_id = G_MM->map->get_absolute_vertex_id(vertex);
-                   if (rank_id >= num_nodes) {
-                       continue;
-                   }
-
-                   assert(rank_id < num_nodes);
-                   assert(info.length >= 0);
-                   G_combined_rank_out__degree_[rank_id].out__degree = (int32_t) (info.length);
-                   G_combined_rank_out__degree_[rank_id].G_rank = 1 / N;
-               }
-           }
-
-           do
-           {
-               double dangling_factor = 0.0;
-
-               diff = 0.0 ;
-               dangling_factor = (double)0 ;
-               if (norm)
-               {
-                   double __S2 = 0.0;
-
-                   __S2 = 0.0 ;
-   #pragma omp parallel
-                   {
-                       double __S2_prv = 0.0;
-
-                       __S2_prv = 0.0 ;
-
-   #pragma omp for nowait
-                       for (node_t v = 0; v < num_nodes; v )
-                       {
-                           if ((G_combined_rank_out__degree_[v].out__degree == 0))
-                           {
-                               __S2_prv = __S2_prv  G_combined_rank_out__degree_[v].G_rank ;
-                           }
-                       }
-
-
-                       GM_ATOMIC_ADD<double>(&__S2, __S2_prv);
-                   }
-                   dangling_factor = damp / N * __S2 ;
-               }
-   #pragma omp parallel
-               {
-                   double diff_prv = 0.0;
-
-                   diff_prv = 0.0 ;
-                   //const size_t num_nodes = num_nodes;
-
-                   // figure out if this is well balance
-               #pragma omp for nowait schedule(dynamic,4096) collapse(2)
-               for (uint32_t seg_id = 0; seg_id < G_MM->map->get_num_segments(); seg_id) {
-                   for (uint32_t v_id = 0; v_id < G_MM->map->NUM_VERTICES_PER_SEGMENT; v_id) {
-                       auto &segment = G_MM->r_map->get_segment(seg_id);
-                       vertex_info_t info = segment.at(v_id);
-
-                       if(info.length == -1) continue;
-                       double val = 0.0;
-                       double __S3 = 0.0;
-
-                       __S3 = 0.0 ;
-                       vertex_t vertex(seg_id, v_id);
-                       size_t rank = G_MM->map->get_absolute_vertex_id(vertex);
-                       if (unlikely(rank >= num_nodes)) {
-                           continue;
-                       }
-                       vertex_t* neighbors = info.get_neighbors();
-                       int32_t &length = info.length;
-                       for (edge_t w_idx = 0; w_idx < length; w_idx )
-                       {
-                           vertex_t &w =  neighbors[w_idx];
-   #ifdef DELETION
-                           if(w.deleted == 1) {
-                               length;
-                               continue;
-                           }
-   #endif
-                           size_t rank_id = G_MM->map->get_absolute_vertex_id(w);
-                           __S3 = __S3  G_combined_rank_out__degree_[rank_id].G_rank / ((double)G_combined_rank_out__degree_[rank_id].out__degree) ;
-                       }
-
-                       val = (1 - damp) / N  damp * __S3  dangling_factor ;
-                       diff_prv = diff_prv   std::abs((val - G_combined_rank_out__degree_[rank].G_rank))  ;
-                       G_rank_nxt[rank] = val ;
-                   }
-               }
-
-                   GM_ATOMIC_ADD<double>(&diff, diff_prv);
-               }
-
-   #pragma omp parallel for
-               for (node_t i5 = 0; i5 < num_nodes; i5 )
-               {
-                   G_combined_rank_out__degree_[i5].G_rank = G_rank_nxt[i5] ;
-               }
-               cnt = cnt  1 ;
-           }
-           while ((diff > tol) && (cnt < max_iter));
-
-   #pragma omp parallel for collapse(2)
-       for (uint32_t seg_id = 0; seg_id < G_MM->map->get_num_segments(); seg_id) {
-           for (uint32_t v_id = 0; v_id < G_MM->map->NUM_VERTICES_PER_SEGMENT; v_id) {
-
-               auto &segment = G_MM->map->get_segment(seg_id);
-               vertex_info_t info = segment.at(v_id);
-               if(info.length == -1) continue;
-
-               vertex_t vertex(seg_id, v_id);
-               size_t rank = G_MM->map->get_absolute_vertex_id(vertex);
-               if (unlikely(rank >= num_nodes)) {
-                   continue;
-               }
-
-               G_MM->map->set_vertex_property<double>(vertex, prop_id, G_combined_rank_out__degree_[rank].G_rank);
-           }
-       }
-       gm_rt_cleanup();
-           //
-           // store the final results (if required)
-        /*   cuckoohash_map<uint64_t, double> result;
-           to_external_ids(rank, num_registered_vertices, &result); // convert the internal logical IDs into the external IDs
-           save(result, dump2file);*/
-
-
-    // auto list_entries = result.lock_table();
-    /*   for (uint32_t seg_id = 0; seg_id < G_MM->map->get_num_segments();seg_id) {
-           for (uint32_t v_id = 0; v_id < G_MM->map->NUM_VERTICES_PER_SEGMENT; v_id) {
-               vertex_t vertex(seg_id, v_id);
-               size_t rank = G_MM->map->get_absolute_vertex_id(vertex);
-             //  std::cout  << G_MM->_numeric32_reverse_key[rank] << " " << G_MM->map->get_vertex_property<double>(vertex, prop_id) << std::endl;
-           }
-       }
-
-       };*/
 
 } // namespace

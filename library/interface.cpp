@@ -55,8 +55,7 @@
 #endif
 
 #if defined(HAVE_SST)
-#include "teseo/teseo_driver.hpp"
-#include "teseo/teseo_real_vtx.hpp"
+#include "sstgraph/sst.hpp"
 #endif
 
 using namespace std;
@@ -215,6 +214,12 @@ std::unique_ptr<Interface> generate_teseo_real_vtx_lcc(bool directed_graph){
 }
 #endif
 
+#if defined(HAVE_SST)
+    std::unique_ptr<Interface> generate_sst(bool directed_graph) {
+        return unique_ptr<Interface>{ new SSTGraph(directed_graph) };
+    }
+#endif
+
 vector<ImplementationManifest> implementations() {
     vector<ImplementationManifest> result;
 
@@ -301,6 +306,10 @@ vector<ImplementationManifest> implementations() {
     result.emplace_back("teseo-lcc.12", "Teseo with a tuned implementation of the LCC kernel", &generate_teseo_lcc);
     result.emplace_back("teseo-dv.12", "Teseo, dense vertices", &generate_teseo_real_vtx);
     result.emplace_back("teseo-lcc-dv.12", "Teseo, dense vertices and sort-merge implementation of the LCC kernel", &generate_teseo_real_vtx_lcc);
+#endif
+
+#if defined(HAVE_SST)
+    result.emplace_back("sst", "SSTGraph, use TBB hashmap for user keys", &generate_sst);
 #endif
 
     return result;

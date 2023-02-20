@@ -1,0 +1,2 @@
+- doesn't have apis for adding/removing single vertices
+- check for directed vs undirected graphs for adding/removing edges

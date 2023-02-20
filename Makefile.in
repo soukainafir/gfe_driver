@@ -22,7 +22,7 @@ CPPFLAGS := @CPPFLAGS@
 EXTRA_CPPFLAGS := @EXTRA_CPPFLAGS@ # extra flags defined by autoconf, similar to AM_CPPFLAGS
 SRC_CPPFLAGS := -I@top_srcdir@/ -I@top_srcdir@/third-party/libcommon/include/lib/
 ALL_CPPFLAGS := ${CPPFLAGS} ${EXTRA_CPPFLAGS} ${SRC_CPPFLAGS}
-CFLAGS := @CFLAGS@ 
+CFLAGS := @CFLAGS@
 EXTRA_CFLAGS := @EXTRA_CFLAGS@ # extra flags defined by autoconf, similar to AM_CFLAGS
 ALL_CFLAGS := ${ALL_CPPFLAGS} ${EXTRA_CFLAGS} ${CFLAGS}
 CXXFLAGS := @CXXFLAGS@
@@ -99,10 +99,11 @@ ifneq (,$(findstring -DHAVE_LIVEGRAPH,${ALL_CPPFLAGS}))
 	sources += $(addprefix library/livegraph/, livegraph_driver.cpp)
 endif
 ifneq (,$(findstring -DHAVE_SST,${ALL_CPPFLAGS}))
-	sources += $(addprefix library/sst/, sst.cpp pagerank.cpp)
+	sources += $(addprefix library/sstgraph/, sst.cpp pagerank.cpp)
 	#sources += $(addprefix /home/soukaina/SSTGraph/, utility.cpp csrpp.cpp csrpp_utility.cpp)
 	#LDFLAGS := @LDFLAGS@ /scratch_user/sfirmli/csr_pp1/csr_pp/external/libs/liblockin.a
 	CXXFLAGS := @CXXFLAGS@
+	CFLAGS += -Wall -Wno-address-of-packed-member -Wextra -O3 -g  -std=c++17 -fopenmp -fno-signed-zeros  -freciprocal-math -ffp-contract=fast -fno-trapping-math  -ffinite-math-only
 endif
 
 

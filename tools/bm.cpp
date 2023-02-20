@@ -82,6 +82,10 @@
 #include "stinger_core/stinger.h"
 #endif
 
+#if defined(HAVE_SST)
+#include "library/sstgraph/sst.hpp"
+#endif
+
 using namespace gfe;
 using namespace std;
 
@@ -124,6 +128,7 @@ static void run();
 [[maybe_unused]] static void run_llama();
 [[maybe_unused]] static void run_livegraph(bool read_only);
 [[maybe_unused]] static void run_stinger();
+[[maybe_unused]] static void run_sst();
 #pragma GCC diagnostic pop
 static void print_results();
 static void save_results(const std::string& where);
@@ -177,6 +182,12 @@ static void run(){
         run_graphone();
 #else
         assert(0 && "Support for graphone disabled");
+#endif
+    } else if(g_library == "csrpp"){
+#if defined(HAVE_SST)
+        run_sst();
+#else
+        assert(0 && "Support for sstgraph disabled");
 #endif
     } else if(g_library == "livegraph-ro" || g_library == "livegraph-rw"){
 #if defined(HAVE_LIVEGRAPH)
@@ -297,6 +308,9 @@ void _bm_run_csr(){
 
 void run_csr(){ _bm_run_csr(); }
 
+#if defined(HAVE_SST)
+static void run_sst(){}
+#endif
 #if defined(HAVE_TESEO)
 
 static void run_teseo(bool read_only){

@@ -16,12 +16,17 @@
  */
 
 #include "SparseMatrix.hpp"
-
+#include "sst.hpp"
+#if defined(LLAMA_HASHMAP_WITH_TBB)
+#include "tbb/concurrent_hash_map.h"
+#else
+#include "third-party/libcuckoo/cuckoohash_map.hh"
+#endif
+#include "common/time.hpp"
 #include <cassert>
 #include <mutex>
 
 using namespace common;
-using namespace libcuckoo;
 using namespace std;
 #define STINGER reinterpret_cast<struct stinger*>(m_stinger_graph)
 #define INT2DBL(v) ( *(reinterpret_cast<double*>(&(v))) )
@@ -58,12 +63,12 @@ namespace gfe::library {
     SSTGraph::SSTGraph(bool directed) : m_directed(directed) {
         uint32_t num_nodes = 0;
         uint64_t num_edges = 0;
-        SparseMatrixV<true, bool> g(num_nodes, num_nodes);
-        G_MM = new graph_csrpp();
+        SparseMatrixV<false, uint32_t> g(num_nodes, num_nodes);
+
     }
 
-    SSTGraph::SSTGraph(bool directed, uint32_t num_vertices) : m_directed(directed) m_num_vertices(num_vertices){
-        g = new SparseMatrixV<true, bool>(num_vertices, num_vertices);
+    SSTGraph::SSTGraph(bool directed, uint32_t num_vertices) : m_directed(directed), m_num_vertices(num_vertices){
+        g = new SparseMatrixV<false, uint32_t>(num_vertices, num_vertices);
     }
 
 
@@ -71,29 +76,24 @@ namespace gfe::library {
         g = nullptr;
     }
 
-    /*void SSTGraph::preallocate_vertices(size_t num_segments) {
-        G_MM->map= std::make_unique<csrpp>(num_segments);
-        if(m_directed) G_MM->r_map= std::make_unique<csrpp>(num_segments);
-    }*/
-
-
-    /*void SSTGraph::print_lock_stat(){
-#ifdef LOCK_IN
-        for (uint32_t seg_id = 0; seg_id <  G_MM->map->get_num_segments(); seg_id) {
-          auto segment = G_MM->map->get_segment(seg_id);
-
-          segment.print_lock_stat();
-
-    }
-#endif
-    }*/
 /******************************************************************************
  *                                                                            *
  *  Conversion functions                                                      *
  *                                                                            *
  *****************************************************************************/
 
-
+    uint64_t SSTGraph::get_internal_vertex_id(uint64_t external_vertex_id) const {
+#if defined(SST_HASHMAP_WITH_TBB)
+        decltype(m_vmap)::const_accessor accessor;
+    if ( m_vmap.find(accessor, external_vertex_id ) ){
+        return accessor->second;
+    } else {
+        ERROR("The given vertex does not exist: " << external_vertex_id);
+    }
+#else
+    return 0;
+#endif
+    }
 /******************************************************************************
  *                                                                            *
  *  Properties                                                                *
@@ -107,18 +107,15 @@ namespace gfe::library {
     }
 
     uint64_t SSTGraph::num_vertices() const {
-        //return G_MM->map->get_num_keys();
         return g->get_rows();
-        // return G_MM->mapping.size();
     }
 
     bool SSTGraph::has_vertex(uint64_t external_vertex_id) const {
-      //  vertex_t vertex;
-        //return G_MM->get_node_key(uint64_to_nodekey(external_vertex_id), vertex);
-        return g->has(r, c);
+        uint32_t sst_source_vertex_id = get_internal_vertex_id(external_vertex_id);
+        return g->has(sst_source_vertex_id, sst_source_vertex_id);
     }
 
-    double CSRPP::get_weight(uint64_t ext_source_id, uint64_t ext_destination_id) const {
+    double SSTGraph::get_weight(uint64_t ext_source_id, uint64_t ext_destination_id) const {
        /* COUT_DEBUG("external: " << ext_source_id << " -> " << ext_destination_id);
         constexpr double NaN { numeric_limits<double>::signaling_NaN() };
 
@@ -147,7 +144,7 @@ namespace gfe::library {
             //if(index != 1) return G_MM->map->get_edge_property_for_vertex<double>(src_vertex, index, 0);
         }
 */
-        return NaN;
+        return 0;
 
     }
 
@@ -170,128 +167,75 @@ namespace gfe::library {
  *****************************************************************************/
     bool SSTGraph::add_vertex(uint64_t vertex_id) {
         COUT_DEBUG("vertex_id: " << vertex_id);
-
-        uint32_t r = translate_row(vertex_id);
-        uint32_t c = translate_col(vertex_id);
-        value_type value = random_int();
-        if g->has(r, c) return false;
-        else {
-            if constexpr (std::is_same<bool, value_type>::value) {
-                value = true;
-            }
-            if (value > max_val) {
-                if constexpr (std::is_integral<value_type>::value) {
-                    value = value % max_val;
+        uint32_t sst_source_vertex_id = get_internal_vertex_id(vertex_id);
+        uint32_t value = 0;
+        if (g->has(sst_source_vertex_id, sst_source_vertex_id)) return false;
+       else {
+           /* if (value > UINT64_MAX) {
+                if constexpr (std::is_integral<int64_t>::value) {
+                    value = value % UINT64_MAX;
                 } else {
-                    value = max_val;
+                    value = UINT64_MAX;
                 }
-            }
+            }*/
+            g->insert(sst_source_vertex_id, sst_source_vertex_id, value);
+            return true;
         }
-        g->insert(r, c, value);
-        return true;
+
     }
 
     bool SSTGraph::remove_vertex(uint64_t external_vertex_id){
         COUT_DEBUG("vertex_id: " << external_vertex_id);
-        auto pair = g->translate_external_id(external_vertex_id);
-        g->remove(pair.first, pair.second);
-        if (check) {
-            if (g->has(mat.remove(pair.first, pair.second))) {
+        auto sst_source_vertex_id = get_internal_vertex_id(external_vertex_id);
+        g->remove(sst_source_vertex_id, sst_source_vertex_id);
+
+            if (g->has(sst_source_vertex_id, sst_source_vertex_id)) {
                 COUT_DEBUG("have something we removed while removing elements");
                 return false;
             }
-        }
+
         return true;
     }
 
+    //
     bool SSTGraph::add_edge(graph::WeightedEdge e){
         COUT_DEBUG("edge: " << e);
-
-          decltype(G_MM->m_vmap)::const_accessor accessor1, accessor2; // shared lock on the dictionary
-          if(!G_MM->m_vmap.find(accessor1, e.source())){ return false; }
-          if(!G_MM->m_vmap.find(accessor2, e.destination())) { return false; }
+        auto sst_source_vertex_id = get_internal_vertex_id(e.source());
+        auto sst_destination_vertex_id = get_internal_vertex_id(e.destination());
 
         // get the indices in the map
         int64_t weight = DBL2INT(e.m_weight);
-        auto row = translate_external_id(e.source());
-        auto col = translate_external_id(e.destination())
-       // G_MM->map->add_with_weight<double>(src_vertex, dst_vertex, e.m_weight);
 
-       /* if(m_directed) {
-            G_MM->r_map->add(dst_vertex, src_vertex);
-        } else{
-            G_MM->map->add_with_weight<double>(dst_vertex, src_vertex, e.m_weight);
-        }*/
-
-        g->insert(row, col, weight);
+        g->insert(sst_source_vertex_id, sst_destination_vertex_id, weight);
 
         return true;
     }
 
     bool SSTGraph::add_edge_v2(gfe::graph::WeightedEdge e){
         COUT_DEBUG("edge: " << e);
-        vertex_t src_vertex, dst_vertex;
+        int64_t sst_source_vertex_id;
+        int64_t sst_destination_vertex_id;
+        try {
+             sst_source_vertex_id = get_internal_vertex_id(e.source());
 
+        } catch(...) { // the vertex does not exist
+           g->insert(sst_source_vertex_id, sst_source_vertex_id);
+        }
 
+        try {
+            sst_destination_vertex_id = get_internal_vertex_id(e.destination());
 
-        // get the indices in the adjacency lists
-
-        /* decltype(G_MM->m_vmap)::const_accessor accessor1, accessor2; // shared lock on the dictionary
-         if(!G_MM->m_vmap.find(accessor1, e.source())){
-         //    global_lock.lock();
-             src_vertex = G_MM->add_vertex(e.source());
-         //    global_lock.unlock();
-         } else src_vertex = accessor1->second;
-
-         if(!G_MM->m_vmap.find(accessor2, e.destination())) {
-          //   global_lock.lock();
-             dst_vertex = G_MM->add_vertex(e.destination());
-         //    global_lock.unlock();
-         } else dst_vertex = accessor2->second;
-         */
-        /*   bool exists = get_node_key(e.source(), src_vertex);
-           if (!exists) {
-             src_vertex = map->add_vertex_rr(0);
-             r_map->add_vertex_rr(0);
-           }
-           bool exists = get_node_key(e.destination(), dst_vertex);
-           if (!exists) {
-             dst_vertex = map->add_vertex_rr(0);
-             r_map->add_vertex_rr(0);
-           }*/
-        src_vertex = G_MM->add_if_not_exist(e.source());
-        dst_vertex = G_MM->add_if_not_exist(e.destination());
-
-        /*  bool src_exists = G_MM->get_node_key(uint32_to_nodekey(e.source()), src_vertex);
-          bool dst_exists = G_MM->get_node_key(uint32_to_nodekey(e.destination()), dst_vertex);
-          {
-          scoped_lock<SpinLock> lock(m_mutex_vtx);
-
-          if (!src_exists ) {
-            src_vertex = G_MM->add_vertex(uint32_to_nodekey(e.source()));
-          }
-          if (!dst_exists) {
-
-            dst_vertex = G_MM->add_vertex(uint32_to_nodekey(e.destination()));
-          }
-          }*/
-
-
-        // printf("num vertices = %d\n", num_vertices());
+        } catch(...) { // the vertex does not exist
+            g->insert(sst_destination_vertex_id, sst_destination_vertex_id);
+        }
 
         int64_t weight = DBL2INT(e.m_weight);
-
-        G_MM->map->add_with_weight<double>(src_vertex, dst_vertex, e.m_weight);
-        if(m_directed) {
-            G_MM->r_map->add(dst_vertex, src_vertex);
-        } else{
-            G_MM->map->add_with_weight<double>(dst_vertex, src_vertex, e.m_weight);
-        }
+        g->insert(sst_source_vertex_id, sst_destination_vertex_id, weight);
         return true;
     }
 
     bool SSTGraph::remove_edge(graph::Edge e){
-        COUT_DEBUG("edge: " << e);
+        /*COUT_DEBUG("edge: " << e);
         vertex_t src_vertex, dst_vertex;
         bool src_exists = G_MM->get_node_key(G_MM->int_to_nodekey(e.source()), src_vertex);
 
@@ -300,7 +244,7 @@ namespace gfe::library {
 
         if (!dst_exists) {  return false; }
         G_MM->map->remove(src_vertex, dst_vertex, false);
-        G_MM->map->remove(dst_vertex, src_vertex, false);
+        G_MM->map->remove(dst_vertex, src_vertex, false);*/
         return true;
     }
 
@@ -363,7 +307,7 @@ namespace gfe::library {
     void SSTGraph::dump_ostream(std::ostream& out) const {
         // struct CSRPP* graph = STINGER;
 
-        out << "[CSRPP] Vertices: " << num_vertices() << ", edges: " << num_edges() << ", directed: " << std::boolalpha << is_directed() << ", size: NOT YET IMPLEMENTED bytes" << "\n";
+    /*    out << "[CSRPP] Vertices: " << num_vertices() << ", edges: " << num_edges() << ", directed: " << std::boolalpha << is_directed() << ", size: NOT YET IMPLEMENTED bytes" << "\n";
         for (uint32_t seg_id = 0; seg_id < G_MM->map->get_num_segments();seg_id) {
             for (uint32_t v_id = 0; v_id < G_MM->map->NUM_VERTICES_PER_SEGMENT; v_id) {
                 auto &segment = G_MM->map->get_segment(seg_id);
@@ -398,11 +342,11 @@ namespace gfe::library {
 
                         /*out << "type: " << dump_edge_type(graph, STINGER_EDGE_TYPE) << ", " <<
                             "weight: Not Yet Implemented" << "\n";*/
-                    }
+    /*                }
                 }
             }
         }
-        std::flush(out);
+        std::flush(out);*/
     }
 
 

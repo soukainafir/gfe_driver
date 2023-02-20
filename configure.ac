@@ -276,7 +276,7 @@ if ( test x"${with_teseo}" != x"" && test x"${with_teseo}" != "no" ); then
     
     AS_VAR_APPEND([CPPFLAGS], [" -I${path_teseo_includedir} -I${path_teseo}/include"])
     AS_VAR_SET([LIBS], ["-L${path_teseo} -lteseo ${LIBS}"])
-    
+
     # Try to compile a program with Teseo
     AC_LINK_IFELSE([
         AC_LANG_PROGRAM([[
@@ -536,7 +536,7 @@ fi
 dnl add the definition HAVE_LLAMA into the list of preprocessor variables $CPPFLAGS
 if( test x"${with_sst}" != x"no" ); then
     AC_MSG_NOTICE([sst support enabled])
-    AS_VAR_APPEND([CPPFLAGS], [" -DHAVE_SST"])
+    AS_VAR_APPEND([CPPFLAGS], [" -DHAVE_SST -DTINYSET_32=1 -DNO_INLINE_TINYSET=1"])
     AS_VAR_APPEND([CPPFLAGS], [" -DSST_FAIR_SHARED_MUTEX"])
 fi
 #############################################################################

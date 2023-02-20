@@ -37,12 +37,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "generated-GM/pagerank.h"
 #include "library/interface.hpp"
 #include "third-party/libcuckoo/cuckoohash_map.hh"
+#include "tbb/concurrent_hash_map.h"
 
-class SparseMatrixV<bool, bool>; // forward declaration
-class csrpp; // forward declaration
+template <bool is_csr_ , typename value_type> class SparseMatrixV;
+
 
 namespace gfe::library {
 
@@ -54,7 +54,7 @@ namespace gfe::library {
     class SSTGraph : public virtual UpdateInterface, public virtual LoaderInterface, public virtual GraphalyticsInterface {
     public:
        // graph_csrpp* G_MM { nullptr };
-        SparseMatrixV* g { nullptr };
+        SparseMatrixV<false, uint32_t>* g { nullptr };
     protected:
         //graph_csrpp* G_MM { nullptr };
         common::SpinLock m_mutex_vtx;
@@ -65,6 +65,9 @@ namespace gfe::library {
         std::atomic<uint64_t> m_num_vertices = 0; // number of vertices
         uint64_t m_timeout = 0; // available time, in seconds, to complete the computation
 
+#if defined(SST_HASHMAP_WITH_TBB)
+        tbb::concurrent_hash_map<uint64_t, /* node_t */ uint64_t> m_vmap; // vertex dictionary, from external vertex ID to internal vertex ID
+#endif
 
     public:
 
@@ -74,7 +77,7 @@ namespace gfe::library {
          */
         SSTGraph(bool directed);
 
-        SSTGraph(bool directed, int num_segments);
+        SSTGraph(bool directed, uint32_t num_segments);
         /**
          * Initialise the graph instance
          * @param num_vertices number of vertices
@@ -86,10 +89,8 @@ namespace gfe::library {
          */
         ~SSTGraph();
 
+        uint64_t get_internal_vertex_id(uint64_t external_vertex_id) const;
 
-        virtual void preallocate_vertices(size_t num_segments);
-
-        virtual void print_lock_stat();
         /**
          * Get the number of edges contained in the graph
          */
