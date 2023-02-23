@@ -18,7 +18,6 @@
 #pragma once
 
 
-#include "SparseMatrix.hpp"
 #include "common/spinlock.hpp"
 /**
  * Copyright (C) 2019 Dean De Leo, email: dleo[at]cwi.nl
@@ -41,7 +40,16 @@
 #include "third-party/libcuckoo/cuckoohash_map.hh"
 #include "tbb/concurrent_hash_map.h"
 
+/*
+class Spa; // forward declaration
+class ll_mlcsr_ro_graph; // forward declaration
+namespace gfe::utility { class TimeoutService; } // forward declaration
+[[maybe_unused]] static void _bm_run_llama(); // bm tool
+[[maybe_unused]] static void _test_perf_run_llama(); // Performance test
+
+*/
 template <bool is_csr_ , typename value_type> class SparseMatrixV;
+
 
 
 namespace gfe::library {
@@ -54,7 +62,7 @@ namespace gfe::library {
     class SSTGraph : public virtual UpdateInterface, public virtual LoaderInterface, public virtual GraphalyticsInterface {
     public:
        // graph_csrpp* G_MM { nullptr };
-        SparseMatrixV<false, uint32_t>* g { nullptr };
+        SparseMatrixV<true, uint32_t>* g { nullptr };
     protected:
         //graph_csrpp* G_MM { nullptr };
         common::SpinLock m_mutex_vtx;

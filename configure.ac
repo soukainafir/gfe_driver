@@ -536,7 +536,7 @@ fi
 dnl add the definition HAVE_LLAMA into the list of preprocessor variables $CPPFLAGS
 if( test x"${with_sst}" != x"no" ); then
     AC_MSG_NOTICE([sst support enabled])
-    AS_VAR_APPEND([CPPFLAGS], [" -DHAVE_SST -DTINYSET_32=1 -DNO_INLINE_TINYSET=1"])
+    AS_VAR_APPEND([CPPFLAGS], [" -DHAVE_SST -DNO_INLINE_TINYSET=1   -fno-signed-zeros  -freciprocal-math -ffp-contract=fast -fno-trapping-math  -ffinite-math-only"])
     AS_VAR_APPEND([CPPFLAGS], [" -DSST_FAIR_SHARED_MUTEX"])
 fi
 #############################################################################
