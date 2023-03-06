@@ -131,6 +131,7 @@ public:
      */
     virtual bool add_vertex(uint64_t vertex_id);
 
+    virtual bool insert_batch_vertices(std::vector<uint64_t> &vertices);
     /**
      * Remove the given vertex and all edges attached to it.
      * @return true in case of success, false otherwise

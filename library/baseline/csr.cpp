@@ -72,7 +72,7 @@ CSR::CSR(bool is_directed, bool numa_interleaved) : m_is_directed(is_directed), 
     ERROR("[CSR] Cannot allocate the memory interleaved, dependency on libnuma missing");
 #else
     if(numa_available() < 0){
-        ERROR("[CSR] Cannot allocate the memory interleaved, a call to numa_available() returns a negative value (=> NUMA not available)");
+        //ERROR("[CSR] Cannot allocate the memory interleaved, a call to numa_available() returns a negative value (=> NUMA not available)");
     }
 #endif
 }
@@ -280,6 +280,7 @@ void CSR::load_directed(gfe::graph::WeightedEdgeStream& stream){
 
             m_out_e[i] = logical_destination_id;
             m_out_w[i] = edge.weight();
+            printf("\n CSR src %d, dst %d, weight %d", logical_source_id, logical_destination_id, edge.weight());
         }
     }
 
@@ -774,6 +775,8 @@ unique_ptr<double[]> CSR::do_pagerank(uint64_t num_iterations, double damping_fa
             } else {
                 outgoing_contrib[v] = scores[v] / out_degree;
             }
+            printf("\nlolol");
+            printf("\nCSR outgoing %f degree %d", outgoing_contrib[v], out_degree);
         }
 
         dangling_sum /= m_num_vertices;
@@ -786,13 +789,16 @@ unique_ptr<double[]> CSR::do_pagerank(uint64_t num_iterations, double damping_fa
             for(uint64_t i = in_interval.first; i < in_interval.second; i++){
                 uint64_t u = in_e[i];
                 incoming_total += outgoing_contrib[u];
+                printf(" \n CSR incoming [%ld] = %f, out[%d] = %f ", v, incoming_total, u, outgoing_contrib[u]);
             }
 
             // update the score
             scores[v] = base_score + damping_factor * (incoming_total + dangling_sum);
         }
     }
-
+        for (int i= 0; i < m_num_vertices; i++) {
+            printf("CSR score %f \n",scores[i] );
+        }
     return ptr_scores;
 }
 

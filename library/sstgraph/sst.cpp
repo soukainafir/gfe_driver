@@ -44,7 +44,6 @@
 #include <cmath>
 #include <omp.h>
 
-
 #include "common/system.hpp"
 #include "third-party/libcuckoo/cuckoohash_map.hh"
 #include "utility/timeout_service.hpp"
@@ -53,6 +52,7 @@ using namespace common;
 using namespace gfe::utility;
 using namespace libcuckoo;
 using namespace std;
+
 
 namespace gapbs { class Bitmap; }
 namespace gapbs { template <typename T> class SlidingQueue; }
@@ -121,12 +121,10 @@ namespace gfe::library {
     SSTGraph::SSTGraph(bool directed) : m_directed(directed) {
         uint32_t num_nodes = 0;
         uint64_t num_edges = 0;
-        SparseMatrixV<true, uint32_t> g(num_nodes, num_nodes);
-
     }
 
     SSTGraph::SSTGraph(bool directed, uint32_t num_vertices) : m_directed(directed), m_num_vertices(num_vertices){
-        g = new SparseMatrixV<true, uint32_t>(num_vertices, num_vertices);
+
     }
 
 
@@ -224,23 +222,22 @@ namespace gfe::library {
  *                                                                            *
  *****************************************************************************/
     bool SSTGraph::add_vertex(uint64_t vertex_id) {
-        COUT_DEBUG("vertex_id: " << vertex_id);
-        uint32_t sst_source_vertex_id = get_internal_vertex_id(vertex_id);
-        uint32_t value = 0;
-        if (g->has(sst_source_vertex_id, sst_source_vertex_id)) return false;
-       else {
-           /* if (value > UINT64_MAX) {
-                if constexpr (std::is
-           _integral<int64_t>::value) {
-                    value = value % UINT64_MAX;
-                } else {
-                    value = UINT64_MAX;
-                }
-            }*/
-            g->insert(sst_source_vertex_id, sst_source_vertex_id, 0);
-            return true;
-        }
+       return true;
+    }
 
+    bool SSTGraph::insert_batch_vertices(vector<uint64_t> &vertices) {
+        g = new SparseMatrixV<true, uint32_t>(vertices.size(), vertices.size());
+
+        bool inserted = false;
+       // printf("num_vertices %d ", vertices.size());
+        for(int i = 0; i < vertices.size(); i++) {
+            decltype(m_vmap)::accessor accessor; // xlock
+            inserted = m_vmap.insert(accessor, vertices[i]);
+            if ( inserted ) {
+                accessor->second = i
+            }
+        }
+        return inserted;
     }
 
     bool SSTGraph::remove_vertex(uint64_t external_vertex_id){
@@ -264,9 +261,11 @@ namespace gfe::library {
 
         // get the indices in the map
         int64_t weight = DBL2INT(e.m_weight);
-
-        g->insert(sst_source_vertex_id, sst_destination_vertex_id, weight);
-
+        printf("\n src %d, dst %d, weight %d", sst_source_vertex_id, sst_destination_vertex_id, weight);
+        g->insert(sst_source_vertex_id, sst_destination_vertex_id, 0);
+        if(!m_directed) {
+           // g->insert(sst_destination_vertex_id, sst_source_vertex_id, 0);
+        }
         return true;
     }
 
@@ -365,10 +364,12 @@ namespace gfe::library {
         PR_Vertex_R(double* &_scores, SparseMatrixV<true, unsigned int>*& _G, gapbs::pvector<double>& _outgoing_contrib, double& _dangling_sum) : dangling_sum(_dangling_sum), scores(_scores), G(_G), outgoing_contrib(_outgoing_contrib) {}
         inline bool operator()(uint32_t i) {
             if(G->getDegree(i) == 0){ // this is a sink
-                dangling_sum = scores[i];
+                dangling_sum += scores[i];
             } else {
-                outgoing_contrib[i] = scores[i] / G->getDegree(i) == 0;
+                outgoing_contrib[i] = scores[i] / G->getDegree(i) ;
+
             }
+            printf("\n degree[%d] = %d", i, G->getDegree(i));
             return true;
         }
     };
@@ -391,33 +392,30 @@ namespace gfe::library {
     };
 
 
-// template <class vertex>
-    /*template <typename T, typename SM> struct PR_F {
-        double* &scores;
+ //template <class vertex>
+    struct PR_F {
         SparseMatrixV<true, uint32_t>* &G;
-        gapbs::pvector<double>& outgoing_contrib;
-        double base_score;
-        const double damping_factor;
+        gapbs::pvector<double> &outgoing_contrib;
         double *incoming_total;
-        double dangling_sum;
-        // vertex* V;
-        // PR_F(double* _p_curr, double* _p_next, vertex* _V) :
-        PR_F(T *_scores, gapbs::pvector<double>& _outgoing_contrib, const SM &_G)
-                : scores(_scores), outgoing_contrib(_outgoing_contrib), G(_G) {}
+
+        PR_F(gapbs::pvector<double> &_outgoing_contrib, SparseMatrixV<true, uint32_t>*  &_G,  double* &_incoming_total)
+                : outgoing_contrib(_outgoing_contrib), G(_G), incoming_total(_incoming_total) {}
         inline bool update(uint32_t s, uint32_t d) {
             incoming_total[s] += outgoing_contrib[d];
+           // printf("\n degree %d", G->getDegree(s));
+           // printf(" \n incoming [%d] = %f, out[%d] = %f ", s, incoming_total[s], d, outgoing_contrib[d]);
             return true;
         }
 
-        inline bool updateAtomic([[maybe_unused]] el_t s,
-                                 [[maybe_unused]] el_t d) { // atomic Update
+        inline bool updateAtomic([[maybe_unused]] uint32_t s,
+                                 [[maybe_unused]] uint32_t d) { // atomic Update
             printf("should never be called for now since its always dense\n");
 
             return true;
         }
-        inline bool cond([[maybe_unused]] el_t d) { return true; }
+        inline bool cond([[maybe_unused]] uint32_t d) { return true; }
     };
-*/
+
     /*
 GAP Benchmark Suite
 Kernel: PageRank (PR)
@@ -443,24 +441,29 @@ updates in the pull direction to remove the need for atomics.
 #pragma omp parallel for
         for(uint64_t v = 0; v < num_vertices; v++){
             scores[v] = init_score;
-            incoming_total = 0;
+            incoming_total[v] = 0;
         }
         gapbs::pvector<double> outgoing_contrib(num_vertices, 0.0);
-
-        VertexSubset Frontier = VertexSubset(0, num_vertices, true);
 
         // pagerank iterations
         for(uint64_t iteration = 0; iteration < num_iterations && !timer.is_timeout(); iteration++){
             double dangling_sum = 0.0;
-
+            VertexSubset Frontier = VertexSubset(0, num_vertices, true);
             // for each node, precompute its contribution to all of its outgoing neighbours and, if it's a sink,
             // add its rank to the `dangling sum' (to be added to all nodes).
             g->vertexMap(Frontier, PR_Vertex_R(scores, g, outgoing_contrib, dangling_sum), false);
             //printf("pass 1\n");
             dangling_sum /= num_vertices;
+            g->edgeMap(Frontier, PR_F(outgoing_contrib, g, incoming_total), true, 20);
+            for (int i = 0; i< num_vertices; i++) {
+             //   printf("incom %f", incoming_total[i]);
+            }
 //        COUT_DEBUG("[" << iteration << "] base score: " << base_score << ", dangling sum: " << dangling_sum);
             g->vertexMap(Frontier, PR_Vertex_F(scores, g, dangling_sum, damping_factor, base_score, incoming_total), false);
 
+        }
+        for (int i= 0; i < num_vertices; i++) {
+            printf(" \n score %f",scores[i] );
         }
         return ptr_scores;
     }
@@ -490,7 +493,7 @@ updates in the pull direction to remove the need for atomics.
                 // if(key == nullptr) continue; // this means that a mapping does not exist. It should never occur as atm we don't support vertex deletions
                 // 2. retrieve the distance / weight
                 size_t internal_id = G_MM->map->get_absolute_vertex_id(vertex);
-                double score = rank[internal_id];
+                double score = rank[intenal_id];
                 // 3. make the association vertex name - score
                 external_ids.insert({key, score});
             }

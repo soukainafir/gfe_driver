@@ -16,8 +16,8 @@ old_CFLAGS="${CFLAGS}"; old_CXXFLAGS="${CXXFLAGS}" dnl Do not automatically set 
 AC_PROG_CC([gcc clang cc icc])
 AC_PROG_CXX([g++ clang++ c++ cxx icpc])
 CFLAGS="${old_CFLAGS}"; unset old_CFLAGS; CXXFLAGS="${old_CXXFLAGS}"; unset old_CXXFLAGS;
-AX_CXX_COMPILE_STDCXX_17 dnl Ask for C++17, thanks!
-
+#AX_CXX_COMPILE_STDCXX_20 dnl Ask for C++17, thanks!
+AX_CXX_COMPILE_STDCXX(20) dnl Ask for C++20, thanks!
 #############################################################################
 # Check whether the user has explicitly set CPPFLAGS, CFLAGS and CXXFLAGS. If 
 # so we try to avoid polluting these flags and respect the user setting
@@ -476,13 +476,15 @@ elif ( test x"${with_sst}" != x"yes" && test x"${with_sst}" != x"auto" ); then d
     with_sst=${with_sst%/} # remove the trailing slash if present
     sst_includedir="";
 
-    AC_CHECK_FILE([${with_sst}/SparseMatrix.hpp], [sst_includedir="${with_sst}"])
+    AC_CHECK_FILE([${with_sst}/include/SSTGraph/SparseMatrix.hpp], [sst_includedir="${with_sst}"])
 
     if( test x"${sst_includedir}" == x"" ); then
         AC_MSG_FAILURE([Cannot find the header sst.h inside ${with_sst}])
     fi
 
     AS_VAR_APPEND([CPPFLAGS], [" -I${sst_includedir}"])
+    AS_VAR_APPEND([CPPFLAGS], [" -I${sst_includedir}/include -I${sst_includedir}/EdgeMapVertexMap/include -I${sst_includedir}/ParallelTools/ -I${sst_includedir}/parlaylib/include/ -I${sst_includedir}/StructOfArrays/include/"])
+
 fi
 
 dnl check whether we can compile & link a program that makes usage of omp.h
@@ -507,7 +509,8 @@ if ( test x"${with_sst}" != x"no" ); then
     AC_MSG_CHECKING([whether we can compile and link against the sst library])
     AC_LINK_IFELSE([
         AC_LANG_PROGRAM([[
-            @%:@include "SparseMatrix.hpp"
+            @%:@include "SSTGraph/SparseMatrix.hpp"
+            @%:@include "EdgeMapVertexMap/internal/VertexSubset.hpp"
 
             VertexSubset Frontier = VertexSubset(0, 1, true);
         ]], [[

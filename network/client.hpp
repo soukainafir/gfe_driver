@@ -135,6 +135,7 @@ public:
     virtual double get_weight(uint64_t source, uint64_t destination) const override;
     virtual void load(const std::string& path) override;
     virtual bool add_vertex(uint64_t vertex_id) override;
+    virtual bool insert_batch_vertices(std::vector<uint64_t> &vertices) override;
     virtual bool remove_vertex(uint64_t vertex_id) override;
     virtual bool add_edge(graph::WeightedEdge e) override;
     virtual bool remove_edge(graph::Edge e) override;

@@ -99,8 +99,7 @@ ifneq (,$(findstring -DHAVE_LIVEGRAPH,${ALL_CPPFLAGS}))
 	sources += $(addprefix library/livegraph/, livegraph_driver.cpp)
 endif
 ifneq (,$(findstring -DHAVE_SST,${ALL_CPPFLAGS}))
-	sources += $(addprefix library/sstgraph/, sst.cpp pagerank.cpp)
-	#sources += $(addprefix /home/soukaina/SSTGraph/, utility.cpp csrpp.cpp csrpp_utility.cpp)
+	sources += $(addprefix library/sstgraph/, sst.cpp)
 	#LDFLAGS := @LDFLAGS@ /scratch_user/sfirmli/csr_pp1/csr_pp/external/libs/liblockin.a
 	CXXFLAGS := @CXXFLAGS@
 	CFLAGS += -Wall -Wno-address-of-packed-member -Wextra -O3 -g  -std=c++17 -fopenmp -fno-signed-zeros  -freciprocal-math -ffp-contract=fast -fno-trapping-math  -ffinite-math-only
@@ -188,7 +187,7 @@ ${gtestlibs}: ${gtestdir}
 ${gtestdir}:
 	mkdir -pv ${gtestdir}
 	cmake -S ${srcdir}/third-party/googletest/ ${dependencies_cmake_flags} -B ${gtestdir}
-	make -C ${gtestdir} -j
+	make -C ${gtestdir}
 	
 ${testgraphs}: | ${testbindir}
 	ln -s $(abspath ${srcdir})/tests/graphs $@

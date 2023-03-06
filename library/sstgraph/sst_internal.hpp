@@ -32,5 +32,9 @@
 
 
 // We're finally ready to include the actual library
+#include "EdgeMapVertexMap/internal/EdgeMap.hpp"
+#include "EdgeMapVertexMap/internal/VertexMap.hpp"
+#include "EdgeMapVertexMap/internal/VertexSubset.hpp"
+#include "SSTGraph/SparseMatrix.hpp"
 
-#include "SparseMatrix.hpp"
+using namespace SSTGraph;

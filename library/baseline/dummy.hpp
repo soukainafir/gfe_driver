@@ -48,6 +48,7 @@ public:
     virtual double get_weight(uint64_t source, uint64_t destination) const; // always returns 0
     virtual void dump_ostream(std::ostream& out) const; // prints `DuMMy'
     virtual bool add_vertex(uint64_t vertex_id); // returns true
+    virtual bool insert_batch_vertices(std::vector<uint64_t> &vertices);
     virtual bool remove_vertex(uint64_t vertex_id); // returns true
     virtual bool add_edge(graph::WeightedEdge e); // returns true
     virtual bool add_edge_v2(gfe::graph::WeightedEdge e); // returns true

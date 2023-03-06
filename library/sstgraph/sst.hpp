@@ -39,7 +39,7 @@
 #include "library/interface.hpp"
 #include "third-party/libcuckoo/cuckoohash_map.hh"
 #include "tbb/concurrent_hash_map.h"
-
+#include <vector>
 /*
 class Spa; // forward declaration
 class ll_mlcsr_ro_graph; // forward declaration
@@ -50,6 +50,7 @@ namespace gfe::utility { class TimeoutService; } // forward declaration
 */
 template <bool is_csr_ , typename value_type> class SparseMatrixV;
 
+#define SST_HASHMAP_WITH_TBB
 
 
 namespace gfe::library {
@@ -62,8 +63,11 @@ namespace gfe::library {
     class SSTGraph : public virtual UpdateInterface, public virtual LoaderInterface, public virtual GraphalyticsInterface {
     public:
        // graph_csrpp* G_MM { nullptr };
-        SparseMatrixV<true, uint32_t>* g { nullptr };
+
     protected:
+        SSTGraph(const SSTGraph&) = delete;
+        SSTGraph& operator=(const SSTGraph&) = delete;
+        SparseMatrixV<true, uint32_t>* g { nullptr };
         //graph_csrpp* G_MM { nullptr };
         common::SpinLock m_mutex_vtx;
         //assert(G_MM != nullptr && "CSRPP allocation");
@@ -85,7 +89,7 @@ namespace gfe::library {
          */
         SSTGraph(bool directed);
 
-        SSTGraph(bool directed, uint32_t num_segments);
+        SSTGraph(bool directed, uint32_t num_vertices);
         /**
          * Initialise the graph instance
          * @param num_vertices number of vertices
@@ -95,7 +99,7 @@ namespace gfe::library {
         /**
          * Destructor
          */
-        ~SSTGraph();
+        virtual ~SSTGraph();
 
         uint64_t get_internal_vertex_id(uint64_t external_vertex_id) const;
 
@@ -140,6 +144,7 @@ namespace gfe::library {
          */
         virtual bool add_vertex(uint64_t vertex_id);
 
+        virtual bool insert_batch_vertices(std::vector<uint64_t> &vertices);
         /**
          * Remove the given vertex and all edges attached to it.
          * @return true in case of success, false otherwise
