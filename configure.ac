@@ -13,11 +13,11 @@ AC_CONFIG_FILES([Makefile])
 #############################################################################
 # Set the compiler $CC and $CXX. Prefer gcc over clang
 old_CFLAGS="${CFLAGS}"; old_CXXFLAGS="${CXXFLAGS}" dnl Do not automatically set -g -O2
-AC_PROG_CC([gcc clang cc icc])
-AC_PROG_CXX([g++ clang++ c++ cxx icpc])
+AC_PROG_CC([gcc-11 clang cc icc])
+AC_PROG_CXX([g++-11 clang++ c++ cxx icpc])
 CFLAGS="${old_CFLAGS}"; unset old_CFLAGS; CXXFLAGS="${old_CXXFLAGS}"; unset old_CXXFLAGS;
-#AX_CXX_COMPILE_STDCXX_20 dnl Ask for C++17, thanks!
-AX_CXX_COMPILE_STDCXX(20) dnl Ask for C++20, thanks!
+#AX_CXX_COMPILE_STDCXX_17 dnl Ask for C++17, thanks!
+AX_CXX_COMPILE_STDCXX(20, noext, optional) dnl Ask for C++20, thanks!
 #############################################################################
 # Check whether the user has explicitly set CPPFLAGS, CFLAGS and CXXFLAGS. If 
 # so we try to avoid polluting these flags and respect the user setting
@@ -483,7 +483,7 @@ elif ( test x"${with_sst}" != x"yes" && test x"${with_sst}" != x"auto" ); then d
     fi
 
     AS_VAR_APPEND([CPPFLAGS], [" -I${sst_includedir}"])
-    AS_VAR_APPEND([CPPFLAGS], [" -I${sst_includedir}/include -I${sst_includedir}/EdgeMapVertexMap/include -I${sst_includedir}/ParallelTools/ -I${sst_includedir}/parlaylib/include/ -I${sst_includedir}/StructOfArrays/include/"])
+    AS_VAR_APPEND([CPPFLAGS], [" -std=c++20 -I${sst_includedir}/include -I${sst_includedir}/EdgeMapVertexMap/include -I${sst_includedir}/ParallelTools/ -I${sst_includedir}/parlaylib/include/ -I${sst_includedir}/StructOfArrays/include/"])
 
 fi
 
@@ -512,9 +512,9 @@ if ( test x"${with_sst}" != x"no" ); then
             @%:@include "SSTGraph/SparseMatrix.hpp"
             @%:@include "EdgeMapVertexMap/internal/VertexSubset.hpp"
 
-            VertexSubset Frontier = VertexSubset(0, 1, true);
+           // VertexSubset Frontier = VertexSubset(0, 1, true);
         ]], [[
-            VertexSubset Frontier2 = VertexSubset(0, 2, true);
+            //VertexSubset Frontier2 = VertexSubset(0, 2, true);
         ]])
     ], [
         AC_MSG_RESULT([yes])
@@ -539,7 +539,7 @@ fi
 dnl add the definition HAVE_LLAMA into the list of preprocessor variables $CPPFLAGS
 if( test x"${with_sst}" != x"no" ); then
     AC_MSG_NOTICE([sst support enabled])
-    AS_VAR_APPEND([CPPFLAGS], [" -DHAVE_SST -DNO_INLINE_TINYSET=1   -fno-signed-zeros  -freciprocal-math -ffp-contract=fast -fno-trapping-math  -ffinite-math-only"])
+    AS_VAR_APPEND([CPPFLAGS], [" -DHAVE_SST -DTINYSET_32=0 -DNO_INLINE_TINYSET=0 -fno-signed-zeros -gdwarf-4 -freciprocal-math -ffp-contract=fast -fno-trapping-math  -ffinite-math-only "])
     AS_VAR_APPEND([CPPFLAGS], [" -DSST_FAIR_SHARED_MUTEX"])
 fi
 #############################################################################

@@ -36,5 +36,3 @@
 #include "EdgeMapVertexMap/internal/VertexMap.hpp"
 #include "EdgeMapVertexMap/internal/VertexSubset.hpp"
 #include "SSTGraph/SparseMatrix.hpp"
-
-using namespace SSTGraph;

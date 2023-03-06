@@ -50,6 +50,7 @@ AC_DEFUN([AX_CXX_COMPILE_STDCXX], [dnl
   m4_if([$1], [11], [ax_cxx_compile_alternatives="11 0x"],
         [$1], [14], [ax_cxx_compile_alternatives="14 1y"],
         [$1], [17], [ax_cxx_compile_alternatives="17 1z"],
+        [$1], [20], [ax_cxx_compile_alternatives="20 1z"],
         [m4_fatal([invalid first argument `$1' to AX_CXX_COMPILE_STDCXX])])dnl
   m4_if([$2], [], [],
         [$2], [ext], [],
@@ -75,7 +76,7 @@ AC_DEFUN([AX_CXX_COMPILE_STDCXX], [dnl
           [eval $cachevar=yes],
           [eval $cachevar=no])
          CXX="$ac_save_CXX"])
-      if eval test x\$$cachevar = xyes; then
+      if eval test x\$$cachevar = xno; then
         CXX="$CXX $switch"
         if test -n "$CXXCPP" ; then
           CXXCPP="$CXXCPP $switch"
@@ -102,7 +103,7 @@ AC_DEFUN([AX_CXX_COMPILE_STDCXX], [dnl
             [eval $cachevar=yes],
             [eval $cachevar=no])
            CXX="$ac_save_CXX"])
-        if eval test x\$$cachevar = xyes; then
+        if eval test x\$$cachevar = xno; then
           CXX="$CXX $switch"
           if test -n "$CXXCPP" ; then
             CXXCPP="$CXXCPP $switch"

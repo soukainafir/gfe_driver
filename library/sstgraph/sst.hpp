@@ -40,6 +40,7 @@
 #include "third-party/libcuckoo/cuckoohash_map.hh"
 #include "tbb/concurrent_hash_map.h"
 #include <vector>
+
 /*
 class Spa; // forward declaration
 class ll_mlcsr_ro_graph; // forward declaration
@@ -48,10 +49,11 @@ namespace gfe::utility { class TimeoutService; } // forward declaration
 [[maybe_unused]] static void _test_perf_run_llama(); // Performance test
 
 */
-template <bool is_csr_ , typename value_type> class SparseMatrixV;
+//using namespace SSTGraph;
+namespace SSTGraph { template <bool is_csr_, typename... Ts> class SparseMatrixV; }
+//template <bool is_csr_ , typename value_type> class SparseMatrixV;
 
 #define SST_HASHMAP_WITH_TBB
-
 
 namespace gfe::library {
 
@@ -67,7 +69,7 @@ namespace gfe::library {
     protected:
         SSTGraph(const SSTGraph&) = delete;
         SSTGraph& operator=(const SSTGraph&) = delete;
-        SparseMatrixV<true, uint32_t>* g { nullptr };
+        ::SSTGraph::SparseMatrixV<true, uint32_t>* g { nullptr };
         //graph_csrpp* G_MM { nullptr };
         common::SpinLock m_mutex_vtx;
         //assert(G_MM != nullptr && "CSRPP allocation");

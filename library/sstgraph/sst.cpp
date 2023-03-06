@@ -53,7 +53,10 @@ using namespace gfe::utility;
 using namespace libcuckoo;
 using namespace std;
 
+using namespace SSTGraph;
+using namespace EdgeMapVertexMap;
 
+namespace EdgeMapVertexMap { template <class node_t> class VertexSubset;}
 namespace gapbs { class Bitmap; }
 namespace gapbs { template <typename T> class SlidingQueue; }
 namespace gapbs { template <typename T> class pvector; }
@@ -234,7 +237,7 @@ namespace gfe::library {
             decltype(m_vmap)::accessor accessor; // xlock
             inserted = m_vmap.insert(accessor, vertices[i]);
             if ( inserted ) {
-                accessor->second = i
+                accessor->second = i;
             }
         }
         return inserted;
@@ -262,7 +265,7 @@ namespace gfe::library {
         // get the indices in the map
         int64_t weight = DBL2INT(e.m_weight);
         printf("\n src %d, dst %d, weight %d", sst_source_vertex_id, sst_destination_vertex_id, weight);
-        g->insert(sst_source_vertex_id, sst_destination_vertex_id, 0);
+        g->insert({sst_source_vertex_id, sst_destination_vertex_id, 0});
         if(!m_directed) {
            // g->insert(sst_destination_vertex_id, sst_source_vertex_id, 0);
         }
@@ -277,18 +280,18 @@ namespace gfe::library {
              sst_source_vertex_id = get_internal_vertex_id(e.source());
 
         } catch(...) { // the vertex does not exist
-           g->insert(sst_source_vertex_id, sst_source_vertex_id, 0);
+           g->insert({sst_source_vertex_id, sst_source_vertex_id, 0});
         }
 
         try {
             sst_destination_vertex_id = get_internal_vertex_id(e.destination());
 
         } catch(...) { // the vertex does not exist
-            g->insert(sst_destination_vertex_id, sst_destination_vertex_id, 0);
+            g->insert({sst_destination_vertex_id, sst_destination_vertex_id, 0});
         }
 
         int64_t weight = DBL2INT(e.m_weight);
-        g->insert(sst_source_vertex_id, sst_destination_vertex_id, weight);
+        g->insert({sst_source_vertex_id, sst_destination_vertex_id, weight});
         return true;
     }
 
@@ -394,6 +397,7 @@ namespace gfe::library {
 
  //template <class vertex>
     struct PR_F {
+        static constexpr bool cond_true = true;
         SparseMatrixV<true, uint32_t>* &G;
         gapbs::pvector<double> &outgoing_contrib;
         double *incoming_total;
@@ -448,18 +452,19 @@ updates in the pull direction to remove the need for atomics.
         // pagerank iterations
         for(uint64_t iteration = 0; iteration < num_iterations && !timer.is_timeout(); iteration++){
             double dangling_sum = 0.0;
-            VertexSubset Frontier = VertexSubset(0, num_vertices, true);
+            VertexSubset<uint32_t> Frontier = VertexSubset<uint32_t>(0, num_vertices, true);
             // for each node, precompute its contribution to all of its outgoing neighbours and, if it's a sink,
             // add its rank to the `dangling sum' (to be added to all nodes).
-            g->vertexMap(Frontier, PR_Vertex_R(scores, g, outgoing_contrib, dangling_sum), false);
+            vertexMap(Frontier, PR_Vertex_R(scores, g, outgoing_contrib, dangling_sum), false);
             //printf("pass 1\n");
             dangling_sum /= num_vertices;
-            g->edgeMap(Frontier, PR_F(outgoing_contrib, g, incoming_total), true, 20);
+            const auto data = EdgeMapVertexMap::getExtraData(*g, true);
+            EdgeMapVertexMap::edgeMap(*g, Frontier, PR_F(outgoing_contrib, g, incoming_total), data, false, 20);
             for (int i = 0; i< num_vertices; i++) {
              //   printf("incom %f", incoming_total[i]);
             }
 //        COUT_DEBUG("[" << iteration << "] base score: " << base_score << ", dangling sum: " << dangling_sum);
-            g->vertexMap(Frontier, PR_Vertex_F(scores, g, dangling_sum, damping_factor, base_score, incoming_total), false);
+            vertexMap(Frontier, PR_Vertex_F(scores, g, dangling_sum, damping_factor, base_score, incoming_total), false);
 
         }
         for (int i= 0; i < num_vertices; i++) {
