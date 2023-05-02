@@ -36,3 +36,8 @@
 #include "EdgeMapVertexMap/internal/VertexMap.hpp"
 #include "EdgeMapVertexMap/internal/VertexSubset.hpp"
 #include "SSTGraph/SparseMatrix.hpp"
+#include "ParallelTools/parallel.h"
+
+#include "graph/edge_stream.hpp"
+
+

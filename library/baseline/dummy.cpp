@@ -26,6 +26,8 @@ bool Dummy::add_edge_v2(graph::WeightedEdge e) { return true; }
 bool Dummy::remove_edge(graph::Edge e){ return true; }
 void Dummy::set_timeout(uint64_t seconds) { }
 bool Dummy::insert_batch_vertices(std::vector<uint64_t> &vertices) { return true; }
+bool Dummy::insert_batch_vertices_symmetric(std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>, unsigned long num_vertices) { return true;}
+
 } // namespace
 
 

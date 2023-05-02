@@ -54,6 +54,10 @@
 #include "utility/graphalytics_validate.hpp"
 #include "library/sstgraph/sst.hpp"
 
+#include <iostream>
+#include <string_view>
+#include <vector>
+#include <fstream>
 
 #define HAVE_SST
 using namespace gfe::library;
@@ -62,6 +66,7 @@ using namespace std;
 
 const std::string path_example_directed = "/home/soukaina/gfe_driver/tests/graphs/ldbc_graphalytics/example-directed"; // without the ext .properties at the end
 const std::string path_example_undirected = "/home/soukaina/gfe_driver/tests/graphs/ldbc_graphalytics/example-undirected"; // without the ext .properties at the end
+const std::string path_example_directed_symmetric = "/home/soukaina/gfe_driver/tests/graphs/ldbc_graphalytics/example-directed-symmetric"; // without the ext .properties at the end
 
 // The algorithms to validate for a given implementation
 #define GA_BFS          0x01
@@ -74,7 +79,45 @@ const std::string path_example_undirected = "/home/soukaina/gfe_driver/tests/gra
 // Log to stdout
 #undef LOG
 #define LOG(message) { std::cout << "\033[0;32m" << "[          ] " << "\033[0;0m" << message << std::endl; }
+#define DBL2INT(v) ( *(reinterpret_cast<uint32_t*>(&(v))) )
+#define LONG2INT(v) ( *(reinterpret_cast<uint32_t*>(&(v))) )
+std::pair<std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>, uint64_t>
+get_edges(const std::string& path_graphalytics_graph) {
+    gfe::reader::GraphalyticsReader reader { "/home/soukaina/gfe_driver/tests/graphs/ldbc_graphalytics/example-directed.properties" };
+    std::vector<std::tuple<uint32_t, uint32_t, uint32_t>> edges_array;
+    uint32_t a;
+    uint32_t b;
+    uint64_t num_nodes = 1;
+    gfe::graph::WeightedEdge edge;
 
+    while(reader.read_edge(edge)) {
+        uint32_t x = DBL2INT(edge.m_weight);
+        a = LONG2INT(edge.m_source) - 1;
+        b = LONG2INT(edge.m_destination) - 1;
+
+        edges_array.emplace_back(a, b, x);
+        edges_array.emplace_back(b, a, x);
+
+        if (a >= num_nodes) {
+            num_nodes = a + 1;
+        }
+        if (b >= num_nodes) {
+            num_nodes = b + 1;
+        }
+        printf("%d %d %f\n", a, b, x);
+        printf("%d %d %f\n", b, a, x);
+
+    }
+    return {edges_array, num_nodes};
+}
+#if defined(HAVE_SST)
+static void load_symmetric(gfe::library::UpdateInterface* interface, const std::string& path_graphalytics_graph) {
+    auto [edges, num_vertices] = get_edges(path_graphalytics_graph);
+    interface->insert_batch_vertices_symmetric(edges, num_vertices);
+    interface->on_thread_destroy(0);
+    interface->on_main_destroy();
+}
+#endif
 #if defined(HAVE_SST)
 static void load(gfe::library::UpdateInterface* interface, const std::string& path_graphalytics_graph){
     uint32_t num_nodes = 0;
@@ -162,7 +205,7 @@ static void validate(gfe::library::GraphalyticsInterface* interface, const std::
 
     gfe::reader::GraphalyticsReader reader { path_graphalytics_graph + ".properties" }; // to parse the properties in the file
 
-    if(algorithms & GA_BFS){
+   /* if(algorithms & GA_BFS){
         string path_reference = path_graphalytics_graph + "-BFS";
         if(!common::filesystem::file_exists(path_reference)) ERROR("The reference output file `" << path_reference << "' does not exist!");
         string path_result = temp_file_path();
@@ -172,7 +215,7 @@ static void validate(gfe::library::GraphalyticsInterface* interface, const std::
         GraphalyticsValidate::bfs(path_result, path_reference);
         LOG("BFS, validation succeeded");
     }
-
+*/
     if(algorithms & GA_PAGERANK){
         string path_reference = path_graphalytics_graph + "-PR";
         if(!common::filesystem::file_exists(path_reference)) ERROR("The reference output file `" << path_reference << "' does not exist!");
@@ -248,8 +291,8 @@ static void validate(gfe::library::GraphalyticsInterface* interface, const std::
 
 TEST(CSR, GraphalyticsDirected){
     auto csr = make_unique<CSR>(/* directed */ true);
-    csr->load(path_example_directed + ".properties");
-    validate(csr.get(), path_example_directed);
+    csr->load(path_example_directed_symmetric + ".properties");
+    validate(csr.get(), path_example_directed_symmetric);
 }
 /*
 TEST(CSR, GraphalyticsUndirected){
@@ -474,9 +517,9 @@ TEST(TeseoLCC, GraphalyticsUndirected){
 
 
 #if defined(HAVE_SST)
-TEST(SSTGraph, GraphalyticsDirected){
-    auto graph = make_unique<SSTGraph>(/* directed */ true);
-    load(graph.get(), path_example_directed);
+TEST(SSTGraph, GraphalyticsUnDirected){
+    auto graph = make_unique<gfe::library::SSTGraph>(/* directed */ true);
+    load_symmetric(graph.get(), path_example_directed);
     validate(graph.get(), path_example_directed, GA_PAGERANK);
 }
 

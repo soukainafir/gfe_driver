@@ -49,7 +49,7 @@ class Aging2Worker {
     uint64_t m_num_edge_deletions {0}; // counter, total number of edge deletions to perform, as contained in the array m_updates
     std::atomic<uint64_t> m_num_operations = 0; // counter, total number of operations performed so far
 
-    enum class TaskOp { IDLE, START, STOP, LOAD_EDGES, EXECUTE_UPDATES, REMOVE_VERTICES, SET_ARRAY_LATENCIES };
+    enum class TaskOp { IDLE, START, STOP, LOAD_EDGES, INSERT_VERTICES, EXECUTE_UPDATES, REMOVE_VERTICES, SET_ARRAY_LATENCIES };
     struct Task { TaskOp m_type; uint64_t* m_payload; uint64_t m_payload_sz; };
     Task m_task; // current task being executed
 
@@ -72,6 +72,8 @@ class Aging2Worker {
     // execute the insert/delete operations for the graph in the background thread
     void main_execute_updates();
 
+    void main_insert_vertices();
+
     // remote the artificial vertices, those that do not belong to the final graph, in the background thread
     void main_remove_vertices(uint64_t* vertices, uint64_t num_vertices);
 
@@ -80,13 +82,21 @@ class Aging2Worker {
 
     // Execute a batch of updates
     void graph_execute_batch_updates(graph::WeightedEdge* __restrict updates, uint64_t num_updates);
+    
+    void graph_insert_batch_vertices(graph::WeightedEdge* __restrict updates, uint64_t num_updates);
 
     template<bool with_latency>
     void graph_execute_batch_updates0(graph::WeightedEdge* __restrict updates, uint64_t num_updates);
 
+    template<bool with_latency>
+    void graph_insert_batch_vertices(graph::WeightedEdge* __restrict updates, uint64_t num_updates);
+
     // Insert the given edge in the graph
     template<bool with_latency>
     void graph_insert_edge(graph::WeightedEdge edge);
+
+    template<bool with_latency>
+    void graph_insert_vertex(graph::WeightedEdge edge);
 
     // Remove the given edge from the graph
     template<bool with_latency>
@@ -115,6 +125,8 @@ public:
 
     // Request the thread to execute all updates
     void execute_updates();
+
+    void insert_vertices();
 
     // Request to remove the vertices that do not belong to the final graph
     void remove_vertices(uint64_t* vertices, uint64_t num_vertices);

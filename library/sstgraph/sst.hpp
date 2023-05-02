@@ -40,6 +40,7 @@
 #include "third-party/libcuckoo/cuckoohash_map.hh"
 #include "tbb/concurrent_hash_map.h"
 #include <vector>
+#include "graph/edge_stream.hpp"
 
 /*
 class Spa; // forward declaration
@@ -53,6 +54,7 @@ namespace gfe::utility { class TimeoutService; } // forward declaration
 namespace SSTGraph { template <bool is_csr_, typename... Ts> class SparseMatrixV; }
 //template <bool is_csr_ , typename value_type> class SparseMatrixV;
 
+namespace gfe::graph { class WeightedEdgeStream; }
 #define SST_HASHMAP_WITH_TBB
 
 namespace gfe::library {
@@ -62,7 +64,7 @@ namespace gfe::library {
 // Otherwise, use libcuckoo
 
 
-    class SSTGraph : public virtual UpdateInterface, public virtual LoaderInterface, public virtual GraphalyticsInterface {
+    class SSTGraph : public virtual LoaderInterface, public virtual GraphalyticsInterface {
     public:
        // graph_csrpp* G_MM { nullptr };
 
@@ -70,6 +72,8 @@ namespace gfe::library {
         SSTGraph(const SSTGraph&) = delete;
         SSTGraph& operator=(const SSTGraph&) = delete;
         ::SSTGraph::SparseMatrixV<true, uint32_t>* g { nullptr };
+        std::unordered_map<uint64_t, uint64_t> m_ext2log; // dictionary external vertex id -> logical vertex id
+        uint64_t* m_log2ext {nullptr}; // dictionary logical vertex id -> external vertex id
         //graph_csrpp* G_MM { nullptr };
         common::SpinLock m_mutex_vtx;
         //assert(G_MM != nullptr && "CSRPP allocation");
@@ -83,7 +87,14 @@ namespace gfe::library {
         tbb::concurrent_hash_map<uint64_t, /* node_t */ uint64_t> m_vmap; // vertex dictionary, from external vertex ID to internal vertex ID
 #endif
 
+    private:
+        // Load an undirected graph
+        void load_undirected(gfe::graph::WeightedEdgeStream& stream);
+        void load_directed(gfe::graph::WeightedEdgeStream& stream);
+
     public:
+        void load(const std::string& path);
+        void load(gfe::graph::WeightedEdgeStream& stream); // it modifies the stream
 
         /**
          * Initialise the graph instance
@@ -147,6 +158,8 @@ namespace gfe::library {
         virtual bool add_vertex(uint64_t vertex_id);
 
         virtual bool insert_batch_vertices(std::vector<uint64_t> &vertices);
+
+        virtual bool insert_batch_vertices_symmetric(std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>, unsigned long num_vertices);
         /**
          * Remove the given vertex and all edges attached to it.
          * @return true in case of success, false otherwise
@@ -218,8 +231,6 @@ namespace gfe::library {
          * Retrieve the internal handle to the library implementation
          */
         virtual void* handle();
-        virtual void load(const std::string& path);
-
     };
 
 /**

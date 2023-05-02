@@ -49,8 +49,9 @@ public:
     virtual void dump_ostream(std::ostream& out) const; // prints `DuMMy'
     virtual bool add_vertex(uint64_t vertex_id); // returns true
     virtual bool insert_batch_vertices(std::vector<uint64_t> &vertices);
+    virtual bool insert_batch_vertices_symmetric(std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>, unsigned long num_vertices);
     virtual bool remove_vertex(uint64_t vertex_id); // returns true
-    virtual bool add_edge(graph::WeightedEdge e); // returns true
+    virtual bool add_edge(graph::WeightedEdge e); // returns true.
     virtual bool add_edge_v2(gfe::graph::WeightedEdge e); // returns true
     virtual bool remove_edge(graph::Edge e); // returns true
     virtual void set_timeout(uint64_t seconds); // nop

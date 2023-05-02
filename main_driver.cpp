@@ -83,7 +83,7 @@ static void run_standalone(int argc, char* argv[]){
         auto impl_load = dynamic_pointer_cast<library::LoaderInterface>(impl);
         if(impl_load.get() == nullptr){ ERROR("The library `" << configuration().get_library_name() << "' does not support loading"); }
         auto impl_rndvtx = dynamic_pointer_cast<library::RandomVertexInterface>(impl);
-        if(impl_rndvtx.get() == nullptr){ ERROR("The library `" << configuration().get_library_name() << "' does not allow to fetch a random vertex"); }
+     //   if(impl_rndvtx.get() == nullptr){ ERROR("The library `" << configuration().get_library_name() << "' does not allow to fetch a random vertex"); }
 
         LOG("[driver] Loading the graph: " << path_graph);
         common::Timer timer; timer.start();
@@ -96,11 +96,11 @@ static void run_standalone(int argc, char* argv[]){
             num_validation_errors = validate_updates(impl_load, stream);
         }
 
-        random_vertex = impl_rndvtx->get_random_vertex_id();
+       // random_vertex = impl_rndvtx->get_random_vertex_id();
     } else {
         auto impl_upd = dynamic_pointer_cast<library::UpdateInterface>(impl);
         if(impl_upd.get() == nullptr){ ERROR("The library `" << configuration().get_library_name() << "' does not support updates"); }
-
+        LOG("[driver] lool ");
         if(configuration().get_update_log().empty()){
             LOG("[driver] Using the graph " << path_graph);
             auto stream = make_shared<graph::WeightedEdgeStream> ( configuration().get_path_graph() );

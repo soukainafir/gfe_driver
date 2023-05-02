@@ -203,7 +203,11 @@ bool AdjacencyList::insert_batch_vertices(std::vector<uint64_t> &vertices) {
     return true;
 }
 
-bool AdjacencyList::add_vertex0(uint64_t vertex_id){
+bool AdjacencyList::insert_batch_vertices_symmetric(std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>, unsigned long num_vertices) {
+    return true;
+}
+
+    bool AdjacencyList::add_vertex0(uint64_t vertex_id){
     COUT_DEBUG("vertex_id: " << vertex_id);
     auto pair = m_adjacency_list.emplace( vertex_id, EdgePair{} );
     return pair.second;

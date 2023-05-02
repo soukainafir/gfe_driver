@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <cassert>
 #include <fstream>
-#include <iostream>
 #include <limits>
 #include <mutex>
 #if defined(HAVE_LIBNUMA)
@@ -754,6 +753,7 @@ unique_ptr<double[]> CSR::do_pagerank(uint64_t num_iterations, double damping_fa
 
     unique_ptr<double[]> ptr_scores{ new double[m_num_vertices]() }; // avoid memory leaks
     double* scores = ptr_scores.get();
+        printf("CSR init %f", init_score);
     #pragma omp parallel for
     for(uint64_t v = 0; v < m_num_vertices; v++){
         scores[v] = init_score;
@@ -767,7 +767,7 @@ unique_ptr<double[]> CSR::do_pagerank(uint64_t num_iterations, double damping_fa
 
         // for each node, precompute its contribution to all of its outgoing neighbours and, if it's a sink,
         // add its rank to the `dangling sum' (to be added to all nodes).
-        #pragma omp parallel for reduction(+:dangling_sum)
+        #pragma omp parallel for reduction(+:dangling_sum) num_threads(1)
         for(uint64_t v = 0; v < m_num_vertices; v++){
             uint64_t out_degree = get_out_degree(v);
             if(out_degree == 0){ // this is a sink
@@ -775,10 +775,10 @@ unique_ptr<double[]> CSR::do_pagerank(uint64_t num_iterations, double damping_fa
             } else {
                 outgoing_contrib[v] = scores[v] / out_degree;
             }
-            printf("\nlolol");
-            printf("\nCSR outgoing %f degree %d", outgoing_contrib[v], out_degree);
+           // printf("\nCSR outgoing %f degree %d dangling sum %f", outgoing_contrib[v], out_degree, dangling_sum);
+            printf("\n degree %d = %d", v, out_degree);
         }
-
+        printf("\nCSR dangling %f", dangling_sum);
         dangling_sum /= m_num_vertices;
 
         // compute the new score for each node in the graph
@@ -789,9 +789,9 @@ unique_ptr<double[]> CSR::do_pagerank(uint64_t num_iterations, double damping_fa
             for(uint64_t i = in_interval.first; i < in_interval.second; i++){
                 uint64_t u = in_e[i];
                 incoming_total += outgoing_contrib[u];
-                printf(" \n CSR incoming [%ld] = %f, out[%d] = %f ", v, incoming_total, u, outgoing_contrib[u]);
-            }
 
+            }
+            printf(" \n CSR incoming [%ld] = %f ", v, incoming_total);
             // update the score
             scores[v] = base_score + damping_factor * (incoming_total + dangling_sum);
         }

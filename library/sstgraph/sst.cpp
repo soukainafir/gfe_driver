@@ -17,6 +17,8 @@
 
 #include "sst_internal.hpp"
 #include "sst.hpp"
+#include <fstream>
+#include <iostream>
 #if defined(LLAMA_HASHMAP_WITH_TBB)
 #include "tbb/concurrent_hash_map.h"
 #else
@@ -36,7 +38,6 @@
 #include <cassert>
 #include <mutex>
 #include "third-party/gapbs/gapbs.hpp"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -44,26 +45,29 @@
 #include <cmath>
 #include <omp.h>
 
+
 #include "common/system.hpp"
 #include "third-party/libcuckoo/cuckoohash_map.hh"
 #include "utility/timeout_service.hpp"
-
+#include "graph/edge_stream.hpp"
+#include "graph/vertex_list.hpp"
 using namespace common;
 using namespace gfe::utility;
 using namespace libcuckoo;
 using namespace std;
-
 using namespace SSTGraph;
 using namespace EdgeMapVertexMap;
+using namespace ParallelTools;
 
 namespace EdgeMapVertexMap { template <class node_t> class VertexSubset;}
 namespace gapbs { class Bitmap; }
 namespace gapbs { template <typename T> class SlidingQueue; }
 namespace gapbs { template <typename T> class pvector; }
-
+namespace gfe::graph { class WeightedEdgeStream; }
 #define STINGER reinterpret_cast<struct stinger*>(m_stinger_graph)
 #define INT2DBL(v) ( *(reinterpret_cast<double*>(&(v))) )
 #define DBL2INT(v) ( *(reinterpret_cast<int64_t*>(&(v))) )
+#define LONG2INT(v) ( *(reinterpret_cast<uint32_t*>(&(v))) )
 
 /*****************************************************************************
  *                                                                           *
@@ -243,6 +247,24 @@ namespace gfe::library {
         return inserted;
     }
 
+    bool SSTGraph::insert_batch_vertices_symmetric(std::vector<std::tuple<uint32_t, uint32_t, uint32_t>> edges, unsigned long num_vertices) {
+
+        g = new SparseMatrixV<true, uint32_t>(num_vertices, num_vertices);
+
+        g->insert_batch(edges.data(), edges.size());
+
+        bool inserted = false;
+        // printf("num_vertices %d ", vertices.size());
+        for(int i = 0; i < num_vertices; i++) {
+            decltype(m_vmap)::accessor accessor; // xlock
+            inserted = m_vmap.insert(accessor, std::get<0>(edges.data()[i]));
+            if ( inserted ) {
+                accessor->second = i;
+            }
+        }
+        return inserted;
+    }
+
     bool SSTGraph::remove_vertex(uint64_t external_vertex_id){
         COUT_DEBUG("vertex_id: " << external_vertex_id);
         auto sst_source_vertex_id = get_internal_vertex_id(external_vertex_id);
@@ -264,7 +286,7 @@ namespace gfe::library {
 
         // get the indices in the map
         int64_t weight = DBL2INT(e.m_weight);
-        printf("\n src %d, dst %d, weight %d", sst_source_vertex_id, sst_destination_vertex_id, weight);
+       // printf("\n src %d, dst %d, weight %d", sst_source_vertex_id, sst_destination_vertex_id, weight);
         g->insert({sst_source_vertex_id, sst_destination_vertex_id, 0});
         if(!m_directed) {
            // g->insert(sst_destination_vertex_id, sst_source_vertex_id, 0);
@@ -357,22 +379,99 @@ namespace gfe::library {
      * Retrieve the internal handle to the library implementation
      */
 
-    void SSTGraph::load(const std::string& path){}
+    void SSTGraph::load(const std::string& path){
+        if(g != nullptr) printf("Already initialised & loaded");
+
+        gfe::graph::WeightedEdgeStream stream { path };
+        load(stream);
+    }
+
+void SSTGraph::load(gfe::graph::WeightedEdgeStream& stream){
+    if(g != nullptr) printf("Already initialised & loaded");
+    load_directed(stream);
+    /*if(is_directed()){
+
+    } else {
+        load_undirected(stream);
+    }*/
+}
+
+void SSTGraph::load_directed(gfe::graph::WeightedEdgeStream& stream) {
+    auto m_num_edges = stream.num_edges();
+
+    auto m_num_vertices = 0;
+    { // init the mapping of vertices
+        auto vertices = stream.vertex_list();
+        vertices->sort();
+        m_num_vertices = vertices->num_vertices();
+
+        m_ext2log.reserve(m_num_vertices);
+        m_log2ext = new uint64_t[m_num_vertices]();
+
+        for(uint64_t i = 0; i < m_num_vertices; i++){
+            uint64_t vertex_id = vertices->get(i);
+            m_ext2log[vertex_id] = i;
+            m_log2ext[i] = vertex_id;
+        }
+    }
+
+    // init the outgoing edges
+    stream.sort_by_src_dst();
+
+    std::vector<std::tuple<uint32_t, uint32_t, uint32_t>> edges_array;
+    uint32_t a;
+    uint32_t b;
+    uint64_t num_nodes = 1;
+    { // restrict the scope
+        uint64_t external_source_id = numeric_limits<uint64_t>::max();
+        uint64_t logical_source_id = 0;
+        for(uint64_t i = 0; i < m_num_edges; i++){
+            auto edge = stream.get(i);
+            if(edge.source() != external_source_id){
+                external_source_id = edge.source();
+                assert(m_ext2log.count(external_source_id) == 1 && "The source vertex is not registered in the mapping");
+                logical_source_id = m_ext2log[external_source_id];
+            }
+            assert(m_ext2log.count(edge.destination()) == 1 && "The destination vertex is not registered in the mapping");
+            uint64_t logical_destination_id = m_ext2log[edge.destination()];
+
+
+            uint32_t x = DBL2INT(edge.m_weight);
+            a = LONG2INT(logical_source_id) ;
+            b = LONG2INT(logical_destination_id);
+
+            edges_array.emplace_back(a, b, x);
+            edges_array.emplace_back(b, a, x);
+
+            if (a >= num_nodes) {
+                num_nodes = a + 1;
+            }
+            if (b >= num_nodes) {
+                num_nodes = b + 1;
+            }
+            printf("%d %d %f\n", a, b, x);
+            printf("%d %d %f\n", b, a, x);
+            printf("\n CSR src %d, dst %d, weight %d", logical_source_id, logical_destination_id, edge.weight());
+        }
+    }
+    insert_batch_vertices_symmetric(edges_array, m_num_vertices);
+}
 
     struct PR_Vertex_R {
         double* &scores;
+        uint32_t* &degrees;
         gapbs::pvector<double>& outgoing_contrib;
         SparseMatrixV<true, uint32_t>* &G;
         double &dangling_sum;
-        PR_Vertex_R(double* &_scores, SparseMatrixV<true, unsigned int>*& _G, gapbs::pvector<double>& _outgoing_contrib, double& _dangling_sum) : dangling_sum(_dangling_sum), scores(_scores), G(_G), outgoing_contrib(_outgoing_contrib) {}
-        inline bool operator()(uint32_t i) {
-            if(G->getDegree(i) == 0){ // this is a sink
+        PR_Vertex_R(double* &_scores, uint32_t* &_degrees, SparseMatrixV<true, unsigned int>*& _G, gapbs::pvector<double>& _outgoing_contrib, double& _dangling_sum) : dangling_sum(_dangling_sum), degrees(_degrees), scores(_scores), G(_G), outgoing_contrib(_outgoing_contrib) {}
+      inline bool operator()(uint32_t i) {
+            if(degrees[i] == 0){ // this is a sink
                 dangling_sum += scores[i];
             } else {
-                outgoing_contrib[i] = scores[i] / G->getDegree(i) ;
-
+                outgoing_contrib[i] = scores[i] / degrees[i] ;
             }
-            printf("\n degree[%d] = %d", i, G->getDegree(i));
+           // printf("\n out contri[%d] = %d, degree %ld, dangling sum = %f", i, outgoing_contrib[i], G->getDegree(i), dangling_sum);
+            printf("\n degree %ld", degrees[i]);
             return true;
         }
     };
@@ -394,6 +493,22 @@ namespace gfe::library {
         }
     };
 
+    struct PR_get_degree {
+        static constexpr bool cond_true = true;
+        uint32_t *degree;
+        PR_get_degree(uint32_t *degree_) : degree(degree_) {}
+        inline bool update([[maybe_unused]] uint32_t s, uint32_t d) {
+            degree[d]++;
+            return true;
+        }
+        inline bool updateAtomic([[maybe_unused]] uint32_t s,
+                                 [[maybe_unused]] uint32_t d) { // atomic Update
+            printf("should never be called for now since its always dense\n");
+
+            return true;
+        }
+        inline bool cond([[maybe_unused]] uint32_t d) { return true; }
+    };
 
  //template <class vertex>
     struct PR_F {
@@ -405,9 +520,11 @@ namespace gfe::library {
         PR_F(gapbs::pvector<double> &_outgoing_contrib, SparseMatrixV<true, uint32_t>*  &_G,  double* &_incoming_total)
                 : outgoing_contrib(_outgoing_contrib), G(_G), incoming_total(_incoming_total) {}
         inline bool update(uint32_t s, uint32_t d) {
-            incoming_total[s] += outgoing_contrib[d];
+            incoming_total[d] += outgoing_contrib[s];
            // printf("\n degree %d", G->getDegree(s));
-           // printf(" \n incoming [%d] = %f, out[%d] = %f ", s, incoming_total[s], d, outgoing_contrib[d]);
+           /* printf("edge from %u (with degree %u), to %u (with degree %u), with value "
+                   "\n",
+                   s, G->getDegree(s), d, G->getDegree(d));*/
             return true;
         }
 
@@ -436,32 +553,50 @@ updates in the pull direction to remove the need for atomics.
 
     static unique_ptr<double[]> do_pagerank(SparseMatrixV<true, uint32_t>* g, uint64_t num_vertices, uint64_t num_iterations, double damping_factor, utility::TimeoutService& timer) {
         // init
+
         const double init_score = 1.0 / num_vertices;
+        printf("num ve %d", num_vertices);
+        printf("init %f", init_score);
         const double base_score = (1.0 - damping_factor) / num_vertices;
         unique_ptr<double[]> ptr_scores{ new double[num_vertices]() }; // avoid memory leaks
-        unique_ptr<double[]> ptr_incoming{ new double[num_vertices]() }; // avoid memory leaks
-        double* incoming_total = ptr_incoming.get();
         double* scores = ptr_scores.get();
-#pragma omp parallel for
+
+        gapbs::pvector<double> outgoing_contrib(num_vertices, 0.0);
+
+        unique_ptr<uint32_t []> ptr_degrees{ new uint32_t[num_vertices]() }; // avoid memory leaks
+        uint32_t* degrees = ptr_degrees.get();
+        ParallelTools::parallel_for(0, num_vertices, [&](uint64_t i) { degrees[i] = 0; });
+
+        #pragma omp parallel for
         for(uint64_t v = 0; v < num_vertices; v++){
             scores[v] = init_score;
-            incoming_total[v] = 0;
         }
-        gapbs::pvector<double> outgoing_contrib(num_vertices, 0.0);
+
+        const auto data = EdgeMapVertexMap::getExtraData(*g, true);
+        VertexSubset<uint32_t> Frontier = VertexSubset<uint32_t>(0, num_vertices, true);
+        EdgeMapVertexMap::edgeMap(*g, Frontier, PR_get_degree(degrees), data, false);
+
+
 
         // pagerank iterations
         for(uint64_t iteration = 0; iteration < num_iterations && !timer.is_timeout(); iteration++){
+            unique_ptr<double[]> ptr_incoming{ new double[num_vertices]() }; // avoid memory leaks
+            double* incoming_total = ptr_incoming.get();
+
+            #pragma omp parallel for
+            for(uint64_t v = 0; v < num_vertices; v++){
+                incoming_total[v] = 0;
+            }
             double dangling_sum = 0.0;
-            VertexSubset<uint32_t> Frontier = VertexSubset<uint32_t>(0, num_vertices, true);
+
             // for each node, precompute its contribution to all of its outgoing neighbours and, if it's a sink,
             // add its rank to the `dangling sum' (to be added to all nodes).
-            vertexMap(Frontier, PR_Vertex_R(scores, g, outgoing_contrib, dangling_sum), false);
-            //printf("pass 1\n");
+            vertexMap(Frontier, PR_Vertex_R(scores, degrees, g, outgoing_contrib, dangling_sum), false);
+            // printf("looooool dangling %f", dangling_sum);
             dangling_sum /= num_vertices;
-            const auto data = EdgeMapVertexMap::getExtraData(*g, true);
             EdgeMapVertexMap::edgeMap(*g, Frontier, PR_F(outgoing_contrib, g, incoming_total), data, false, 20);
             for (int i = 0; i< num_vertices; i++) {
-             //   printf("incom %f", incoming_total[i]);
+                printf("incom %f", incoming_total[i]);
             }
 //        COUT_DEBUG("[" << iteration << "] base score: " << base_score << ", dangling sum: " << dangling_sum);
             vertexMap(Frontier, PR_Vertex_F(scores, g, dangling_sum, damping_factor, base_score, incoming_total), false);
@@ -480,7 +615,7 @@ updates in the pull direction to remove the need for atomics.
         printf("num keys = %d\n", num_nodes);
         // execute the algorithm
         unique_ptr<double[]> ptr_rank = do_pagerank(g, num_nodes, num_iterations, damping_factor, tcheck);
-        printf("pass 0.0\n");
+        //printf("pass 0.0\n");
         // if(tcheck.is_timeout()){ RAISE_EXCEPTION(TimeoutError, "Timeout occurred after " << timer); }
 
         // translate the vertex ids and set the distance of the non reached vertices to max()

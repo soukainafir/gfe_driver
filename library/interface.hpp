@@ -195,6 +195,8 @@ public:
     virtual bool add_vertex(uint64_t vertex_id) = 0;
 
     virtual bool insert_batch_vertices(std::vector<uint64_t> &vertices) = 0;
+
+    virtual bool insert_batch_vertices_symmetric(std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>, unsigned long num_vertices) = 0;
     /**
      * Remove the given vertex from the graph. The implementation may be unable to remove the vertex
      * if there are still edges attached or it may go ahead the vertex and all edges attached. This

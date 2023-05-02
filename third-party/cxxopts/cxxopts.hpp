@@ -346,7 +346,7 @@ namespace cxxopts
   {
     public:
     option_exists_error(const std::string& option)
-    : OptionSpecException(u8"Option " + LQUOTE + option + RQUOTE + u8" already exists")
+    : OptionSpecException(LQUOTE + option + RQUOTE )
     {
     }
   };
@@ -355,7 +355,7 @@ namespace cxxopts
   {
     public:
     invalid_option_format_error(const std::string& format)
-    : OptionSpecException(u8"Invalid option format " + LQUOTE + format + RQUOTE)
+    : OptionSpecException( LQUOTE + format + RQUOTE)
     {
     }
   };
@@ -364,7 +364,7 @@ namespace cxxopts
   {
     public:
     option_not_exists_exception(const std::string& option)
-    : OptionParseException(u8"Option " + LQUOTE + option + RQUOTE + u8" does not exist")
+    : OptionParseException(LQUOTE + option + RQUOTE)
     {
     }
   };
@@ -374,7 +374,7 @@ namespace cxxopts
     public:
     missing_argument_exception(const std::string& option)
     : OptionParseException(
-        u8"Option " + LQUOTE + option + RQUOTE + u8" is missing an argument"
+        LQUOTE + option + RQUOTE
       )
     {
     }
@@ -385,7 +385,7 @@ namespace cxxopts
     public:
     option_requires_argument_exception(const std::string& option)
     : OptionParseException(
-        u8"Option " + LQUOTE + option + RQUOTE + u8" requires an argument"
+        LQUOTE + option + RQUOTE
       )
     {
     }
@@ -400,9 +400,7 @@ namespace cxxopts
       const std::string& arg
     )
     : OptionParseException(
-        u8"Option " + LQUOTE + option + RQUOTE +
-        u8" does not take an argument, but argument " +
-        LQUOTE + arg + RQUOTE + " given"
+        LQUOTE + option + RQUOTE + LQUOTE + arg + RQUOTE
       )
     {
     }
@@ -412,7 +410,7 @@ namespace cxxopts
   {
     public:
     option_not_present_exception(const std::string& option)
-    : OptionParseException(u8"Option " + LQUOTE + option + RQUOTE + u8" not present")
+    : OptionParseException( LQUOTE + option + RQUOTE)
     {
     }
   };
@@ -425,7 +423,7 @@ namespace cxxopts
       const std::string& arg
     )
     : OptionParseException(
-        u8"Argument " + LQUOTE + arg + RQUOTE + u8" failed to parse"
+        LQUOTE + arg + RQUOTE
       )
     {
     }
@@ -436,7 +434,7 @@ namespace cxxopts
     public:
     option_required_exception(const std::string& option)
     : OptionParseException(
-        u8"Option " + LQUOTE + option + RQUOTE + u8" is required but not present"
+        LQUOTE + option + RQUOTE
       )
     {
     }
