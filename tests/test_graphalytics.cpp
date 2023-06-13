@@ -110,6 +110,35 @@ get_edges(const std::string& path_graphalytics_graph) {
     }
     return {edges_array, num_nodes};
 }
+
+void make_symmetrical(const std::string& path_graphalytics_graph) {
+    gfe::reader::GraphalyticsReader reader { "/home/soukaina/gfe_driver/tests/graphs/ldbc_graphalytics/example-directed.properties" };
+    std::vector<std::tuple<uint32_t, uint32_t, uint32_t>> edges_array;
+    uint32_t a;
+    uint32_t b;
+    uint64_t num_nodes = 1;
+    gfe::graph::WeightedEdge edge;
+
+    while(reader.read_edge(edge)) {
+        uint32_t x = DBL2INT(edge.m_weight);
+        a = LONG2INT(edge.m_source) - 1;
+        b = LONG2INT(edge.m_destination) - 1;
+
+        edges_array.emplace_back(a, b, x);
+        edges_array.emplace_back(b, a, x);
+
+        if (a >= num_nodes) {
+            num_nodes = a + 1;
+        }
+        if (b >= num_nodes) {
+            num_nodes = b + 1;
+        }
+        printf("%d %d %f\n", a, b, x);
+        printf("%d %d %f\n", b, a, x);
+
+    }
+}
+
 #if defined(HAVE_SST)
 static void load_symmetric(gfe::library::UpdateInterface* interface, const std::string& path_graphalytics_graph) {
     auto [edges, num_vertices] = get_edges(path_graphalytics_graph);
@@ -523,4 +552,8 @@ TEST(SSTGraph, GraphalyticsUnDirected){
     validate(graph.get(), path_example_directed, GA_PAGERANK);
 }
 
+TEST(SSTGraph, MakeSymmetrical){
+    make_symmetrical(path_example_directed);
+}
 #endif
+
