@@ -198,6 +198,31 @@ unique_ptr<VertexList> WeightedEdgeStream::vertex_list() const {
     return make_unique<VertexList>(vertices.release());
 }
 
+uint64_t WeightedEdgeStream::num_vertices() const {
+    Timer timer;
+    timer.start();
+
+    LOG("Computing the list of vertices ...");
+
+    unordered_map<uint64_t, bool> unique_vertices;
+    for(uint64_t i = 0, end = num_edges(); i < end; i++){
+        unique_vertices[m_sources->get_value_at(i)] = true;
+        unique_vertices[m_destinations->get_value_at(i)] = true;
+    }
+
+    auto vertices = make_unique<CByteArray>(CByteArray::compute_bytes_per_elements(m_max_vertex_id), unique_vertices.size());
+    uint64_t i = 0;
+    for(auto p : unique_vertices){
+        vertices->set_value_at(i, p.first);
+        i++;
+    }
+
+    timer.stop();
+    LOG("List of vertices computed in " << timer);
+
+    return i;
+}
+
 unique_ptr<cuckoohash_map<uint64_t, uint64_t>> WeightedEdgeStream::vertex_table() const {
     LOG("Computing the list of vertices ... ")
     Timer timer; timer.start();

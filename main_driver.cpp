@@ -98,7 +98,7 @@ static void run_standalone(int argc, char* argv[]){
     } else {
         auto impl_upd = dynamic_pointer_cast<library::UpdateInterface>(impl);
         if(impl_upd.get() == nullptr){ ERROR("The library `" << configuration().get_library_name() << "' does not support updates"); }
-
+        LOG("[driver] lool ");
         if(configuration().get_update_log().empty()){
             LOG("[driver] Using the graph " << path_graph);
             auto stream = make_shared<graph::WeightedEdgeStream> ( configuration().get_path_graph() );

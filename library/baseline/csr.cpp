@@ -153,6 +153,8 @@ bool CSR::has_vertex(uint64_t vertex_id) const {
     return m_ext2log.count(vertex_id);
 }
 
+void CSR::preallocate_vertices(size_t num_segments) {}
+
 double CSR::get_weight(uint64_t source, uint64_t destination) const {
     uint64_t logical_source_id = 0, logical_destination_id = 0;
     try {

@@ -416,7 +416,6 @@ bool Stinger::add_edge_v2(gfe::graph::WeightedEdge e){
     int64_t src = get_or_create_vertex_id(e.source());
     int64_t dst = get_or_create_vertex_id(e.destination());
     int64_t weight = DBL2INT(e.m_weight);
-
     int rc = 0;
     if(m_directed){ // directed graph
         rc = stinger_insert_edge (STINGER, /* type, ignore */ 0 , src, dst, weight, /* timestamp, ignore */ 0);

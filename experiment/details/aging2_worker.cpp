@@ -112,6 +112,10 @@ void Aging2Worker::execute_updates(){
     set_task_async(TaskOp::EXECUTE_UPDATES);
 }
 
+void Aging2Worker::insert_vertices(){
+    set_task_async(TaskOp::INSERT_VERTICES);
+}
+
 void Aging2Worker::remove_vertices(uint64_t* vertices, uint64_t num_vertices){
     set_task_async(TaskOp::REMOVE_VERTICES, vertices, num_vertices);
 }
@@ -192,6 +196,9 @@ void Aging2Worker::main_thread(){
         case TaskOp::EXECUTE_UPDATES:
             main_execute_updates();
             break;
+        case TaskOp::INSERT_VERTICES:
+            main_insert_vertices();
+            break;    
         case TaskOp::REMOVE_VERTICES:
             main_remove_vertices(task.m_payload, task.m_payload_sz);
             break;
@@ -278,6 +285,44 @@ void Aging2Worker::main_execute_updates(){
     }
 }
 
+void Aging2Worker::main_insert_vertices(){
+    const bool release_memory = m_master.parameters().m_release_driver_memory;
+   // printf("worker id %d\n", m_worker_id);
+    for(uint64_t i = 0, end = m_updates.size(); i < end; i++){
+        // if we're release the driver's memory, always fetch the first. Otherwise follow the index.
+        vector<graph::WeightedEdge>* operations = m_updates[i];
+
+        uint64_t num_loops = operations->size();
+        uint64_t start = 0;
+            // execute a chunk of updates
+           // graph_execute_batch_updates(operations->data() + start, end - start);
+            graph_insert_batch_vertices(operations->data(), num_loops);
+           // uint64_t num_ops_done = m_master.m_num_operations_performed.fetch_add( end - start );
+
+            // report progress
+           /* if(report_progress && static_cast<int>(100.0 * num_ops_done/num_total_ops) > m_master.m_last_progress_reported){
+                m_master.m_last_progress_reported = 100.0 * num_ops_done/num_total_ops;
+                if(!m_master.m_stop_experiment){
+                    LOG("[thread: " << ::common::concurrency::get_thread_id() << ", worker_id: " << m_worker_id << "] Progress: " << static_cast<int>(100.0 * num_ops_done/num_total_ops) << "%");
+                }
+            }*/
+
+            // report how long it took to perform 1x, 2x, ... updates w.r.t. to the size of the final graph
+         /*   int aging_coeff = (static_cast<double>(num_ops_done) / m_master.num_edges_final_graph()) * reports_per_ops;
+            if(aging_coeff > lastset_coeff){
+                if( m_master.m_last_time_reported.compare_exchange_strong(/* updates lastset_coeff */ //lastset_coeff, aging_coeff) ){
+                //    uint64_t duration = chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - m_master.m_time_start ).count();
+                //    m_master.m_reported_times[aging_coeff -1] = duration;
+              //  }
+          //  }
+
+            // next iteration
+//            start = end;
+            
+       // printf("num vertices = %d\n", m_library->num_vertices());  
+        
+    }
+}
 
 void Aging2Worker::main_load_edges(uint64_t* edges, uint64_t num_edges){
     if(m_updates.empty()){ m_updates.append(new vector<graph::WeightedEdge>()); }
@@ -293,7 +338,7 @@ void Aging2Worker::main_load_edges(uint64_t* edges, uint64_t num_edges){
     uniform_real_distribution<double> rndweight{0, m_master.parameters().m_max_weight}; // in [0, max_weight)
 
     for(uint64_t i = 0; i < num_edges; i++){
-        if(static_cast<int>((sources[i] + destinations[i]) % modulo) == m_worker_id){
+        if(static_cast<int>((sources[i] + destinations[i]) % modulo) == m_worker_id){//-----------FIX THIS
             if(last->size() > last_max_sz){
                 last = new vector<graph::WeightedEdge>();
                 m_updates.append(last);
@@ -349,6 +394,19 @@ void Aging2Worker::graph_execute_batch_updates(graph::WeightedEdge* __restrict u
     }
 }
 
+void Aging2Worker::graph_insert_batch_vertices(graph::WeightedEdge* __restrict updates, uint64_t num_updates){
+    if(m_latency_insertions == nullptr){
+        assert(m_master.parameters().m_measure_latency == false);
+        assert(m_latency_deletions == nullptr);
+        graph_insert_batch_vertices</* measure latency ? */ false>(updates, num_updates);
+    } else {
+        assert(m_master.parameters().m_measure_latency == true);
+        assert(m_latency_deletions != nullptr);
+
+        graph_insert_batch_vertices</* measure latency ? */ true>(updates, num_updates);
+    }
+}
+
 template<bool with_latency>
 void Aging2Worker::graph_execute_batch_updates0(graph::WeightedEdge* __restrict updates, uint64_t num_updates){
     for(uint64_t i = 0; i < num_updates; i++){
@@ -365,6 +423,18 @@ void Aging2Worker::graph_execute_batch_updates0(graph::WeightedEdge* __restrict 
 }
 
 template<bool with_latency>
+void Aging2Worker::graph_insert_batch_vertices(graph::WeightedEdge* __restrict updates, uint64_t num_updates){
+    for(uint64_t i = 0; i < num_updates; i++){
+      //  if(m_master.m_stop_experiment) break; // timeout, we're done
+            
+            graph_insert_vertex<with_latency>(updates[i]);  
+            
+            
+    }
+
+}
+
+template<bool with_latency>
 void Aging2Worker::graph_insert_edge(graph::WeightedEdge edge){
     if(!m_master.is_directed() && m_uniform(m_random) < 0.5) edge.swap_src_dst(); // noise
     COUT_DEBUG("edge: " << edge);
@@ -372,13 +442,13 @@ void Aging2Worker::graph_insert_edge(graph::WeightedEdge edge){
     if(with_latency == false){
         // the function returns true if the edge has been inserted. Repeat the loop if it cannot insert the edge as one of
         // the vertices is still being inserted by another thread
-        while ( ! m_library->add_edge_v2(edge) ) { /* nop */ };
+        while ( ! m_library->add_edge(edge) ) { /* nop */ };
 
     } else { // measure the latency of the insertion
         chrono::steady_clock::time_point t0, t1;
         do {
             t0 = chrono::steady_clock::now();
-        } while ( ! m_library->add_edge_v2(edge) );
+        } while ( ! m_library->add_edge(edge) );
         t1 = chrono::steady_clock::now();
 
         m_latency_insertions[0] = chrono::duration_cast<chrono::nanoseconds>(t1 - t0).count();
@@ -387,6 +457,30 @@ void Aging2Worker::graph_insert_edge(graph::WeightedEdge edge){
 
 }
 
+template<bool with_latency>
+void Aging2Worker::graph_insert_vertex(graph::WeightedEdge edge){
+  //  if(!m_master.is_directed() && m_uniform(m_random) < 0.5) edge.swap_src_dst(); // noise
+   // COUT_DEBUG("edge: " << edge);
+
+    if(with_latency == false){
+        // the function returns true if the edge has been inserted. Repeat the loop if it cannot insert the edge as one of
+        // the vertices is still being inserted by another thread
+       // insertion
+            m_library->add_vertex(edge.source());
+            m_library->add_vertex(edge.destination());
+                   
+    } else { // measure the latency of the insertion
+        chrono::steady_clock::time_point t0, t1;        
+        t0 = chrono::steady_clock::now();
+        m_library->add_vertex(edge.source());
+        m_library->add_vertex(edge.destination());
+        t1 = chrono::steady_clock::now();
+
+        m_latency_insertions[0] = chrono::duration_cast<chrono::nanoseconds>(t1 - t0).count();
+        m_latency_insertions++;
+    }
+
+}
 template<bool with_latency>
 void Aging2Worker::graph_remove_edge(graph::Edge edge, bool force){
     if(!m_master.is_directed() && m_uniform(m_random) < 0.5) edge.swap_src_dst(); // noise
@@ -401,6 +495,7 @@ void Aging2Worker::graph_remove_edge(graph::Edge edge, bool force){
         }
 
     } else { // measure the latency of the deletion
+
         chrono::steady_clock::time_point t0, t1;
 
         t0 = chrono::steady_clock::now();

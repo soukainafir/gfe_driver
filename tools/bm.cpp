@@ -65,6 +65,11 @@
 #include "library/graphone/internal.hpp"
 #endif
 
+// csrpp
+#if defined(HAVE_CSRPP)
+#include "library/csrpp/csrpp.hpp"
+#endif
+
 // livegraph
 #if defined(HAVE_LIVEGRAPH)
 #include "library/livegraph/livegraph_driver.hpp"
@@ -121,6 +126,7 @@ static void run();
 [[maybe_unused]] static void run_csr();
 [[maybe_unused]] static void run_teseo(bool read_only);
 [[maybe_unused]] static void run_graphone();
+[[maybe_unused]] static void run_csrpp();
 [[maybe_unused]] static void run_llama();
 [[maybe_unused]] static void run_livegraph(bool read_only);
 [[maybe_unused]] static void run_stinger();
@@ -178,6 +184,12 @@ static void run(){
 #else
         assert(0 && "Support for graphone disabled");
 #endif
+    } else if(g_library == "csrpp"){
+#if defined(HAVE_CSRPP)
+        run_csrpp();
+#else
+        assert(0 && "Support for csrpp disabled");
+#endif    
     } else if(g_library == "livegraph-ro" || g_library == "livegraph-rw"){
 #if defined(HAVE_LIVEGRAPH)
         run_livegraph(/* read only ? */ g_library == "livegraph-ro");
@@ -642,6 +654,161 @@ static void run_graphone(){
 }
 #endif
 
+#if defined(HAVE_CSRPP)
+static void run_csrpp(){
+   // auto* view = create_static_view(get_graphone_graph(), SIMPLE_MASK | PRIVATE_MASK); // global
+    auto csrpp = dynamic_cast<library::CSRPP*>(g_interface.get());
+    auto* G_MM = csrpp->G_MM;
+    const uint64_t num_vertices = g_vertices_sorted.size();
+    common::Timer timer;
+
+    for(int r = 0; r < g_num_repetitions; r++){
+        LOG("Repetition: " << (r +1) << "/" << g_num_repetitions);
+        for(auto num_threads: g_num_threads){
+            LOG("    num threads: " << num_threads);
+
+            // vertices, logical identifiers, sorted
+            timer.start();
+            uint64_t sum = 0;
+            #pragma omp parallel for num_threads(num_threads) reduction(+:sum) schedule(dynamic, 4096) 
+            for(uint64_t i = 0; i < num_vertices; i++){            
+                //vertex_info_t info = segment->at(v_id); // throws invalid_vertex?
+                //if (UNLIKELY(!info.is_valid())) { continue; }
+                uint32_t seg_id = i / 4096;
+                uint32_t v_id = i % 4096;
+                auto &segment = G_MM->map->get_segment(seg_id);
+                vertex_info_t info = segment.at(v_id);
+                if(info.length <= 0 ) continue;
+                sum += info.length;                
+            }
+
+            timer.stop();
+            validate_sum_degree(sum);
+            g_samples.emplace_back("degree_logical_sorted", num_threads, timer.microseconds());
+
+            // vertices, logical identifiers, unsorted
+            timer.start();
+            sum = 0;
+            #pragma omp parallel for num_threads(num_threads) reduction(+:sum) schedule(dynamic, 4096)
+            for(uint64_t i = 0; i < num_vertices; i++){
+                /*
+                 v.id = g_vertices_logical[i] % NUM_V_SEG
+                 seg_id = g_vertices_logical[i] / NUM_V_SEG
+                */
+                uint32_t seg_id = g_vertices_logical[i] / 4096;
+                uint32_t v_id = g_vertices_logical[i] % 4096;
+                auto &segment = G_MM->map->get_segment(seg_id);
+                vertex_info_t info = segment.at(v_id);
+                if(info.length <= 0 ) continue;
+                sum += info.length; 
+            }
+            timer.stop();
+            validate_sum_degree(sum);
+            g_samples.emplace_back("degree_logical_unsorted", num_threads, timer.microseconds());
+
+            // point lookups, logical vertices, sorted
+            timer.start();
+            sum = 0;
+            #pragma omp parallel num_threads(num_threads) reduction(+:sum)
+            {
+                #pragma omp for schedule(dynamic, 4096)
+                for(uint64_t i = 0; i < num_vertices; i++){
+                    uint32_t seg_id = i / 4096;
+                    uint32_t v_id = i % 4096;
+
+                    auto &segment = G_MM->map->get_segment(seg_id);
+                    vertex_info_t info = segment.at(v_id);
+                    if(info.length <= 0 ) continue;
+
+                    vertex_t* neighbors = info.get_neighbors();                    
+                    size_t id = G_MM->map->get_absolute_vertex_id(neighbors[0]);
+                    sum += id;
+                }                
+            }
+            timer.stop();
+            validate_sum_point_lookups(sum);
+            g_samples.emplace_back("point_logical_sorted", num_threads, timer.microseconds());
+
+            // point lookups, logical, unsorted
+            timer.start();
+            sum = 0;
+            #pragma omp parallel num_threads(num_threads) reduction(+:sum)
+            {
+                
+                #pragma omp for schedule(dynamic, 4096)
+                for(uint64_t i = 0; i < num_vertices; i++){
+                    uint32_t seg_id = g_vertices_logical[i] / 4096;
+                    uint32_t v_id = g_vertices_logical[i] % 4096;
+
+                    auto &segment = G_MM->map->get_segment(seg_id);
+                    vertex_info_t info = segment.at(v_id);
+                    if(info.length <= 0 ) continue;
+
+                    vertex_t* neighbors = info.get_neighbors();                    
+                    size_t id = G_MM->map->get_absolute_vertex_id(neighbors[0]);
+                    sum += id;
+                }                
+            }
+            timer.stop();
+            validate_sum_point_lookups(sum);
+            g_samples.emplace_back("point_logical_unsorted", num_threads, timer.microseconds());
+
+            // scan, logical vertices, sorted
+            timer.start();
+            sum = 0;
+            #pragma omp parallel num_threads(num_threads) reduction(+:sum)
+            {
+                
+                #pragma omp for schedule(dynamic, 4096)
+                for(uint64_t i = 0; i < num_vertices; i++){
+                    uint32_t seg_id = i / 4096;
+                    uint32_t v_id = i % 4096;
+
+                    auto &segment = G_MM->map->get_segment(seg_id);
+                    vertex_info_t info = segment.at(v_id);
+                    if(info.length <= 0 ) continue;
+
+                    vertex_t* neighbors = info.get_neighbors(); 
+                    for (edge_t w_idx = 0; w_idx < info.length; w_idx ++) {
+                        size_t id = G_MM->map->get_absolute_vertex_id(neighbors[w_idx]);                    
+                        sum += id;
+                    }
+                }
+            }
+            timer.stop();
+            validate_sum_scan(sum);
+            g_samples.emplace_back("scan_logical_sorted", num_threads, timer.microseconds());
+
+            // scan, logical vertices, unsorted
+            timer.start();
+            sum = 0;
+            #pragma omp parallel num_threads(num_threads) reduction(+:sum)
+            {            
+                #pragma omp for schedule(dynamic, 4096)
+                for(uint64_t i = 0; i < num_vertices; i++){
+                     uint32_t seg_id = g_vertices_logical[i] / 4096;
+                    uint32_t v_id = g_vertices_logical[i] % 4096;
+
+                    auto &segment = G_MM->map->get_segment(seg_id);
+                    vertex_info_t info = segment.at(v_id);
+                    if(info.length <= 0 ) continue;
+
+                    vertex_t* neighbors = info.get_neighbors(); 
+                    for (edge_t w_idx = 0; w_idx < info.length; w_idx ++) {
+                        size_t id = G_MM->map->get_absolute_vertex_id(neighbors[w_idx]);                    
+                        sum += id;
+                    }
+                }                
+            }
+            timer.stop();
+            validate_sum_scan(sum);
+            g_samples.emplace_back("scan_logical_unsorted", num_threads, timer.microseconds());
+        }
+    }
+
+}
+#endif
+
 #if defined(HAVE_LLAMA)
 static void _bm_run_llama(){
     auto instance = dynamic_cast<library::LLAMAClass*>(g_interface.get());
@@ -997,6 +1164,9 @@ static void run_stinger(){
 #endif
 
 static void validate_sum_degree(uint64_t sum) {
+    printf("degree sum = %lu\n", sum); 
+
+static void validate_sum_degree(uint64_t sum) {
     if(g_sum_degree == 0){
         g_sum_degree = sum;
     } else if (g_sum_degree != sum ){
@@ -1006,6 +1176,7 @@ static void validate_sum_degree(uint64_t sum) {
 }
 
 static void validate_sum_point_lookups(uint64_t sum) {
+    printf("point lookups sum = %lu\n", sum);    
     if(g_sum_point_lookups == 0){
         g_sum_point_lookups = sum;
     } else if (g_sum_point_lookups != sum ){
@@ -1015,6 +1186,7 @@ static void validate_sum_point_lookups(uint64_t sum) {
 }
 
 static void validate_sum_scan(uint64_t sum) {
+    printf("scan sum = %lu\n", sum); 
     if(g_sum_scan == 0){
         g_sum_scan = sum;
     } else if (g_sum_scan != sum ){
@@ -1088,6 +1260,13 @@ static void load(){
         cerr << "ERROR: gfe configured and built without linking the library graphone\n";
         exit(EXIT_FAILURE);
 #endif
+    } else if(g_library == "csrpp"){
+#if defined(HAVE_CSRPP)
+        g_interface.reset( new library::CSRPP(/* directed ? */ false) );
+#else
+        cerr << "ERROR: gfe configured and built without linking the library csrpp\n";
+        exit(EXIT_FAILURE);
+#endif
     } else if(g_library == "llama"){
 #if defined(HAVE_LLAMA)
         g_interface.reset( new library::LLAMARef(/* directed ? */ false) );
@@ -1153,6 +1332,8 @@ static void load(){
             num_threads = 16;
         } else if(g_library == "graphone"){
             num_threads = 12;
+        } else if(g_library == "csrpp"){
+            num_threads = 1;
         } else if(g_library == "livegraph-ro" || g_library == "livegraph-rw"){
             num_threads = 20;
         }
@@ -1200,7 +1381,7 @@ static void parse_args(int argc, char* argv[]) {
             string library = optarg;
             if(library == "livegraph"){
                 library = "livegraph-ro";
-            } else if(library != "csr" && library != "csr-numa" && library != "teseo" && library != "teseo-rw" && library != "graphone" && library != "llama" && library != "stinger" && library != "livegraph-ro" && library != "livegraph-rw"){
+            } else if(library != "csr" && library != "csrpp" && library != "csr-numa" && library != "teseo" && library != "teseo-rw" && library != "graphone" && library != "llama" && library != "stinger" && library != "livegraph-ro" && library != "livegraph-rw"){
                 cerr << "ERROR: Invalid library: `" << library << "'. Only \"csr\", \"csr-numa\", \"teseo\", \"graphone\", \"llama\" and \"stinger\" are supported." << endl;
                 exit(EXIT_FAILURE);
             }
@@ -1304,7 +1485,7 @@ static string string_usage(char* program_name) {
     ss << "Usage: " << program_name << " -G <graph> [-t <num_threads>] [-l <library>] [-R <num_repetitions>]\n";
     ss << "Where: \n";
     ss << "  -G <graph> is an .properties file of an undirected graph from the Graphalytics data set\n";
-    ss << "  -l <library> is the library to execute. Only \"csr\", \"csr-numa\" \"teseo\" (default), \"teseo-rw\", \"graphone\", \"livegraph\", \"livegraph-rw\", \"llama\", and \"stinger\" are supported\n";
+    ss << "  -l <library> is the library to execute. Only \"csr\", \"csr-numa\" \"teseo\" (default), \"csrpp\", \"teseo-rw\", \"graphone\", \"livegraph\", \"livegraph-rw\", \"llama\", and \"stinger\" are supported\n";
     ss << "  -R <num_repetitions> is the number of repetitions the same micro benchmarks need to be performed\n";
     ss << "  -t <num_threads> follows the page range format, e.g. 1-16,32\n";
     return ss.str();

@@ -139,6 +139,9 @@ public:
      */
     uint64_t num_vertices() const;
 
+    virtual void preallocate_vertices(size_t num_segments);
+    void print_lock_stat(){}
+
     /**
      * Returns true if the given vertex is present, false otherwise
      */

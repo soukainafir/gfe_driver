@@ -83,7 +83,8 @@ public:
      * Dump the content of the graph to stdout
      */
     virtual void dump() const;
-
+    
+    
     /**
      * Dump the content of the graph to the given path
      */
@@ -193,6 +194,9 @@ public:
      * @return true if the vertex has been inserted, false otherwise (that is, the vertex already exists)
      */
     virtual bool add_vertex(uint64_t vertex_id) = 0;
+
+    virtual void preallocate_vertices(size_t num_segments) = 0;
+    virtual void print_lock_stat() = 0;
 
     /**
      * Remove the given vertex from the graph. The implementation may be unable to remove the vertex

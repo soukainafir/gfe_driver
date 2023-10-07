@@ -102,8 +102,7 @@ void Aging2Master::init_workers() {
     m_workers.reserve(parameters().m_num_threads);
     for(uint64_t worker_id = 0; worker_id < parameters().m_num_threads; worker_id++){
         m_workers.push_back ( new Aging2Worker(*this, worker_id) );
-    }
-
+    }   
     LOG("[Aging2] Workers initialised in " << timer);
 }
 
@@ -185,7 +184,23 @@ void Aging2Master::do_run_experiment(){
 
     auto start_time = chrono::steady_clock::now();
     Timer timer; timer.start();
+    
     m_parameters.m_library->updates_start();
+    //add vertices single thread
+    Timer timer_vertices;
+    timer_vertices.start();
+    for(auto w : m_workers) {
+        if(m_parameters.m_library->num_vertices() == 8870942) break;
+        w->insert_vertices();
+        w->wait();
+    }
+    
+    timer_vertices.stop();
+     // LOG("[Aging2] Time to insert vertices" << adding_vertices_time - start_time);
+ 
+ printf("num verticesc= %d\n", parameters().m_library->num_vertices());    
+    LOG("Vertex Insertions performed in " << timer);    
+  
     for(auto w: m_workers) w->execute_updates();
     wait_and_record();
     build_service.stop();
@@ -194,7 +209,9 @@ void Aging2Master::do_run_experiment(){
     timer.stop();
     LOG("[Aging2] Experiment completed!");
     LOG("[Aging2] Updates performed with " << parameters().m_num_threads << " threads in " << timer);
+    printf("num verticesc= %d\n", m_parameters.m_library->num_vertices());   
     cooloff(start_time);
+    m_parameters.m_library->print_lock_stat();
     m_results.m_completion_time = timer.microseconds();
     m_results.m_num_build_invocations = build_service.num_invocations();
     m_results.m_num_levels_created = m_parameters.m_library->num_levels();

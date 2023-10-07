@@ -125,6 +125,9 @@ public:
      */
     virtual void dump_ostream(std::ostream& out) const;
 
+    virtual void preallocate_vertices(size_t num_segments);
+
+    void print_lock_stat(){}
     /**
      * Add the given vertex to the graph
      * @return true if the vertex has been inserted, false otherwise

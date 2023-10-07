@@ -53,6 +53,9 @@
 #include "teseo/teseo_driver.hpp"
 #include "teseo/teseo_real_vtx.hpp"
 #endif
+#if defined(HAVE_CSRPP)
+#include "csrpp/csrpp.hpp"
+#endif
 
 using namespace std;
 
@@ -104,6 +107,12 @@ std::unique_ptr<Interface> generate_csr_lcc_numa(bool directed_graph){
 std::unique_ptr<Interface> generate_dummy(bool directed_graph){
     return unique_ptr<Interface>{ new Dummy(directed_graph) };
 }
+
+#if defined(HAVE_CSRPP)
+std::unique_ptr<Interface> generate_csrpp(bool directed_graph){
+    return unique_ptr<Interface>{ new CSRPP(directed_graph) };
+}
+#endif
 
 #if defined(HAVE_LLAMA)
 std::unique_ptr<Interface> generate_llama(bool directed_graph){
@@ -210,6 +219,8 @@ std::unique_ptr<Interface> generate_teseo_real_vtx_lcc(bool directed_graph){
 }
 #endif
 
+
+
 vector<ImplementationManifest> implementations() {
     vector<ImplementationManifest> result;
 
@@ -296,6 +307,10 @@ vector<ImplementationManifest> implementations() {
     result.emplace_back("teseo-lcc.12", "Teseo with a tuned implementation of the LCC kernel", &generate_teseo_lcc);
     result.emplace_back("teseo-dv.12", "Teseo, dense vertices", &generate_teseo_real_vtx);
     result.emplace_back("teseo-lcc-dv.12", "Teseo, dense vertices and sort-merge implementation of the LCC kernel", &generate_teseo_real_vtx_lcc);
+#endif
+
+#if defined(HAVE_CSRPP)
+    result.emplace_back("csrpp", "CSR++, use algorithms generated from Green-Marl and no properties updates", &generate_csrpp);    
 #endif
 
     return result;

@@ -214,6 +214,8 @@ bool AdjacencyList::remove_vertex(uint64_t vertex_id){
     }
 }
 
+void AdjacencyList::preallocate_vertices(size_t num_segments) {}
+
 bool AdjacencyList::delete_vertex0(uint64_t vertex_id){
     COUT_DEBUG("vertex_id: " << vertex_id);
     auto vertex_src = m_adjacency_list.find(vertex_id);

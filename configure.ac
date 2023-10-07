@@ -49,25 +49,25 @@ CFLAGS="${CFLAGS} ${OPENMP_CFLAGS}"
 CXXFLAGS="${CXXFLAGS} ${OPENMP_CXXFLAGS}"
 LIBS="${LIBS} ${OPENMP_CXXFLAGS}"
 if test x"${have_openmp}" == x"yes"; then
-	CPPFLAGS="${CPPFLAGS} -DHAVE_OPENMP"
+    CPPFLAGS="${CPPFLAGS} -DHAVE_OPENMP"
 fi
 
 #############################################################################
 # Intel TBB
 have_tbb="unknown"; # Perform the check only once when invoking MY_INTEL_TBB()
 AC_DEFUN([MY_INTEL_TBB], [
-	if test x"${have_tbb}" == x"unknown"; then
-		have_tbb="yes" # assume so
-		AC_CHECK_HEADER([tbb/tbb.h], [
-			AC_SEARCH_LIBS([TBB_runtime_interface_version], [tbb], 
-			[CPPFLAGS="${CPPFLAGS} -DHAVE_TBB"], 
-			[have_tbb="no"])
-		], [have_tbb="no"], [ [/* avoid default includes */] ])
-	fi
-	
-	if test x"${have_tbb}" == x"no"; then
-		AC_MSG_ERROR(["The dependency library Intel TBB is not available in this machine"]);
-	fi
+    if test x"${have_tbb}" == x"unknown"; then
+        have_tbb="yes" # assume so
+        AC_CHECK_HEADER([/cm/shared/apps/intel/composer_xe/2013.4.183/tbb/include/tbb/tbb_stddef.h], [
+            AC_SEARCH_LIBS([TBB_runtime_interface_version], [tbb], 
+            [CPPFLAGS="${CPPFLAGS} -DHAVE_TBB"], 
+            [have_tbb="no"])
+        ], [have_tbb="no"], [ [/* avoid default includes */] ])
+    fi
+    
+    if test x"${have_tbb}" == x"no"; then
+        AC_MSG_ERROR(["The dependency library Intel TBB is not available in this machine"]);
+    fi
 ])
 
 #############################################################################
@@ -293,6 +293,109 @@ if ( test x"${with_teseo}" != x"" && test x"${with_teseo}" != "no" ); then
 fi
 
 #############################################################################
+# Support for the CSR++ framework
+# Usage:
+# --with-csrpp=/path/to/csrpp/build
+#
+AC_ARG_WITH([csrpp], [AS_HELP_STRING([--with-csrpp@<:@=ARG@:>@], [
+    Link to the CSR++ library. The argument needs to be the path where the library has been built.
+])], [])
+
+if ( test -z "${with_csrpp}" ); then with_csrpp="no"; dnl transform the empty string '' into 'no'
+elif ( test x"${with_csrpp}" != x"yes" && test x"${with_csrpp}" != x"auto" ); then dnl --with-csrpp=/path/to/csrpp_repo
+    with_csrpp=${with_csrpp%/} # remove the trailing slash if present
+    csrpp_includedir="";
+
+    AC_CHECK_FILE([${with_csrpp}/csrpp.h], [csrpp_includedir="${with_csrpp}"])
+   
+    if( test x"${csrpp_includedir}" == x"" ); then
+        AC_MSG_FAILURE([Cannot find the header csrpp.h inside ${with_csrpp}])
+    fi
+
+     
+    AS_VAR_APPEND([CPPFLAGS], [" -lstdc++fs -I${csrpp_includedir} -I${csrpp_includedir}/generated-GM -I${csrpp_includedir}/external/headers -I${csrpp_includedir}/external/generated-src -I${csrpp_includedir}/external/libs/inc/jansson -I${csrpp_includedir}/external/libs/include -I${csrpp_includedir}/external/headers/include -I${csrpp_includedir}/external/gperftools-2.7/lib/include -I${csrpp_includedir}/external/jemalloc/include -I${csrpp_includedir}/external/jemalloc/lib"])
+fi
+
+if ( test x"${with_csrpp}" != x"" && test x"${with_csrpp}" != "no" ); then
+    dnl check whether we can compile & link a program that makes usage of omp.h
+    if ( test "${have_openmp}" == "no" ); then
+        AC_MSG_FAILURE([CSR++: missing prerequisite header omp.h (OpenMP runtime library)])
+    fi
+    
+    AC_MSG_NOTICE([CSR++: checking whether Intel TBB is present in the machine...])
+    MY_INTEL_TBB()
+    
+
+
+    if( test x"${with_csrpp}" == x"yes" ); then
+        AC_MSG_ERROR(["the full path to the CSR++ build needs to be specified, e.g. --with-csrpp=/path/to/csrpp/build"]);
+    fi
+
+
+    
+    path_gm=$(realpath "${with_csrpp}/external/libs/libgm_graph.so")
+        AC_CHECK_FILE([${path_gm}], 
+        [ LIBS="${path_gm} ${LIBS}" ], 
+        [ AC_MSG_ERROR(["file not found: ${path_gm}"]) ]
+    )
+
+    path_liblock=$(realpath "${with_csrpp}/external/libs/liblockin.a")
+        AC_CHECK_FILE([${path_liblock}], 
+        [ LIBS="${path_liblock} ${LIBS}" ],
+        [ AC_MSG_ERROR(["file not found: ${path_liblock}"]) ]
+    )
+
+    path_jemalloc=$(realpath "${with_csrpp}/external/jemalloc/lib/libjemalloc.so")
+    AC_CHECK_FILE([${path_jemalloc}], 
+        [ LIBS="${path_jemalloc} ${LIBS}" ], 
+        [ AC_MSG_ERROR(["file not found: ${path_jemalloc}"]) ]
+    )
+
+    path_jansson=$(realpath "${with_csrpp}/external/libs/libjansson.so.4")
+    AC_CHECK_FILE([${path_jansson}], 
+        [ LIBS="${path_jansson} ${LIBS}" ], 
+        [ AC_MSG_ERROR(["file not found: ${path_jansson}"]) ]
+    )
+
+    dnl check whether we have Intel TBB
+ 
+
+if ( test x"${with_csrpp}" != x"no" &&  test x"${with_csrpp}" != x"auto" ); then
+    AC_MSG_NOTICE([csrpp: checking whether Intel TBB is present in the machine...])
+   # MY_INTEL_TBB() dnl it raises an error if not satisfied 
+   #### assume TBB module is loaded 
+    AS_VAR_APPEND([CPPFLAGS], [" -DCLHT_MMAP  -DDEFAULT_GM_TOP=\"/scratch_user/sfirmli/csr_pp1/csr_pp\" -L/scratch_user/sfirmli/csr_pp1/csr_pp/external/libs/liblockin.a -DHASHMAP_WITH_TBB -DGM_EDGE64 -DGM_NODE32 -DNUMVSEG=4096 -DBLOCK_SIZE=2 -DE_PROPS -DBATCH64 -DLOCK_IN=LOCKPROF -DLOCK_IN_VERBOSE=1 -lstdc++fs "])
+    ## -L/scratch_user/sfirmli/csr_pp1/csr_pp/external/libs/liblockin.a -DE_PROPS -DHTM -DLOCK_IN=PROFLOCK -DLOCK_IN_VERBOSE=1
+fi
+
+    AC_MSG_NOTICE([CSR++ source directory: ${csrpp_includedir}])
+    
+    dnl check whether we can compile & link a simple program invoking functions from the graphone library
+    AC_MSG_CHECKING([whether we can compile and link against the CSR++ library])
+    AC_LINK_IFELSE([
+        AC_LANG_PROGRAM([[
+            #define TBB
+            @%:@include <omp.h>
+            @%:@include "csrpp.h"
+            
+            csrpp map(2);
+            int THD_COUNT = omp_get_max_threads() -1;
+            spinlock lock;
+        ]], [[
+            /* empty main, it uses the global variable g as a global */
+        ]])
+    ], [
+        AC_MSG_RESULT([yes])
+    ], [
+        AC_MSG_RESULT([no])
+        AC_MSG_FAILURE([unable to compile and link an executable with CSR++])
+    ])
+    
+    AC_MSG_NOTICE([CSR++ support enabled])
+    AS_VAR_APPEND([CPPFLAGS], [" -DHAVE_CSRPP"])
+fi
+
+#############################################################################
 # Support for the library Stinger
 # Usage:
 # default (auto) => attempts to link with stinger, but it does not abort in case it cannot 
@@ -309,7 +412,7 @@ m4_divert_pop([DEFAULTS])
 
 if ( test -z "${with_stinger}" ); then with_stinger="no"; dnl transform the empty string '' into 'no'
 elif ( test x"${with_stinger}" != x"yes" && test x"${with_stinger}" != x"auto" ); then dnl --with-stinger=/path/to/stinger/build
-    AS_VAR_APPEND([CPPFLAGS], [" -I${with_stinger}/include"])
+    AS_VAR_APPEND([CPPFLAGS], ["-lstdc++fs -I${with_stinger}/include"])
     AS_VAR_APPEND([LIBS], [" -L${with_stinger}/lib -Wl,-rpath=${with_stinger}/lib"])
 fi
     
@@ -358,6 +461,10 @@ if( test x"${with_stinger}" != x"no" ); then
     AC_MSG_NOTICE([stinger support enabled])
     AS_VAR_APPEND([CPPFLAGS], [" -DHAVE_STINGER"])
 fi
+
+
+
+
 
 #############################################################################
 # Support for the LLAMA framework
@@ -408,9 +515,9 @@ fi
 
 dnl check whether we have Intel TBB
 if ( test x"${with_llama}" != x"no" &&  test x"${with_llama}" != x"auto" ); then
-	AC_MSG_NOTICE([llama: checking whether Intel TBB is present in the machine...])
-	MY_INTEL_TBB() dnl it raises an error if not satisfied
-	AS_VAR_APPEND([CPPFLAGS], [" -DLLAMA_HASHMAP_WITH_TBB"])
+    AC_MSG_NOTICE([llama: checking whether Intel TBB is present in the machine...])
+    MY_INTEL_TBB() dnl it raises an error if not satisfied
+    AS_VAR_APPEND([CPPFLAGS], [" -DLLAMA_HASHMAP_WITH_TBB"])
 fi
 
 dnl check whether we can compile & link a simple program invoking functions from the llama library
@@ -464,51 +571,51 @@ AC_ARG_WITH([graphone], [AS_HELP_STRING([--with-graphone@<:@=ARG@:>@], [
 ])], [])
 
 if ( test x"${with_graphone}" != x"" && test x"${with_graphone}" != "no" ); then
-	dnl check whether we can compile & link a program that makes usage of omp.h
-	if ( test "${have_openmp}" == "no" ); then
+    dnl check whether we can compile & link a program that makes usage of omp.h
+    if ( test "${have_openmp}" == "no" ); then
         AC_MSG_FAILURE([GraphOne: missing prerequisite header omp.h (OpenMP runtime library)])
-	fi
-	
-	AC_MSG_NOTICE([GraphOne: checking whether Intel TBB is present in the machine...])
-	MY_INTEL_TBB()
-	
-	if( test x"${with_graphone}" == x"yes" ); then
-		AC_MSG_ERROR(["the full path to the GraphOne build needs to be specified, e.g. --with-graphone=/path/to/graphone/build"]);
-	fi
-	
-	path_onedata=$(realpath "${with_graphone}/onedata/libonedata64.a")
-		AC_CHECK_FILE([${path_onedata}], 
-		[ LIBS="${path_onedata} ${LIBS}" ], 
-		[ AC_MSG_ERROR(["file not found: ${path_onedata}"]) ]
-	)
-		
-	path_graphone_library=$(realpath "${with_graphone}/src/libsrc64.a")
-	AC_CHECK_FILE([${path_graphone_library}], 
-		[ LIBS="${path_graphone_library} ${LIBS}" ], 
-		[ AC_MSG_ERROR(["file not found: ${path_graphone_library}"]) ]
-	)
+    fi
+    
+    AC_MSG_NOTICE([GraphOne: checking whether Intel TBB is present in the machine...])
+    MY_INTEL_TBB()
+    
+    if( test x"${with_graphone}" == x"yes" ); then
+        AC_MSG_ERROR(["the full path to the GraphOne build needs to be specified, e.g. --with-graphone=/path/to/graphone/build"]);
+    fi
+    
+    path_onedata=$(realpath "${with_graphone}/onedata/libonedata64.a")
+        AC_CHECK_FILE([${path_onedata}], 
+        [ LIBS="${path_onedata} ${LIBS}" ], 
+        [ AC_MSG_ERROR(["file not found: ${path_onedata}"]) ]
+    )
+        
+    path_graphone_library=$(realpath "${with_graphone}/src/libsrc64.a")
+    AC_CHECK_FILE([${path_graphone_library}], 
+        [ LIBS="${path_graphone_library} ${LIBS}" ], 
+        [ AC_MSG_ERROR(["file not found: ${path_graphone_library}"]) ]
+    )
 
-	path_graphone_cmakecache=$(realpath "${with_graphone}/CMakeCache.txt")
-	AC_CHECK_FILE([${path_graphone_cmakecache}], [], [AC_MSG_ERROR(["file not found: ${path_graphone_cmakecache}. This file is used to infer the path to the source directory of GraphOne"])])
-	path_graphone_srcdir=$(awk -F= '$1 ~ /CMAKE_HOME_DIRECTORY/ {print $2}' ${path_graphone_cmakecache})
-	AC_MSG_NOTICE([GraphOne source directory: ${path_graphone_srcdir}])
+    path_graphone_cmakecache=$(realpath "${with_graphone}/CMakeCache.txt")
+    AC_CHECK_FILE([${path_graphone_cmakecache}], [], [AC_MSG_ERROR(["file not found: ${path_graphone_cmakecache}. This file is used to infer the path to the source directory of GraphOne"])])
+    path_graphone_srcdir=$(awk -F= '$1 ~ /CMAKE_HOME_DIRECTORY/ {print $2}' ${path_graphone_cmakecache})
+    AC_MSG_NOTICE([GraphOne source directory: ${path_graphone_srcdir}])
     AS_VAR_APPEND([CPPFLAGS], [" -I${path_graphone_srcdir}/src -I${path_graphone_srcdir}/include -I${path_graphone_srcdir}/gview -I${path_graphone_srcdir}/analytics -I${path_graphone_srcdir}/onedata"])
     
-	dnl check whether we can compile & link a simple program invoking functions from the graphone library
+    dnl check whether we can compile & link a simple program invoking functions from the graphone library
     AC_MSG_CHECKING([whether we can compile and link against the GraphOne library])
     AC_LINK_IFELSE([
         AC_LANG_PROGRAM([[
             #define OVER_COMMIT 
             #define TBB
-           	#define PLAIN_GRAPH
-           	#define B64
-           	#define DEL
-        	@%:@include <omp.h>
+            #define PLAIN_GRAPH
+            #define B64
+            #define DEL
+            @%:@include <omp.h>
             @%:@include "graph.h"
-			
+            
             /* required globals */
             graph* g = new graph; 
-			int THD_COUNT = omp_get_max_threads() -1;
+            int THD_COUNT = omp_get_max_threads() -1;
         ]], [[
             /* empty main, it uses the global variable g as a global */
         ]])

@@ -53,6 +53,9 @@ public:
     virtual bool add_edge_v2(gfe::graph::WeightedEdge e); // returns true
     virtual bool remove_edge(graph::Edge e); // returns true
     virtual void set_timeout(uint64_t seconds); // nop
+    virtual void preallocate_vertices(size_t num_segments); 
+    void print_lock_stat(){}
+
 }; // class
 
 } // namespace
